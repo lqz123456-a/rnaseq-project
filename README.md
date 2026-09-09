@@ -20,8 +20,8 @@ rnaseq-project/
 ├── RNA-seq_salmon全流程_操作清单.md   # 全流程可照做复现文档（含排障表）
 ├── scripts/
 │   ├── make_tx2gene.py                # 从 GTF 生成 tx2gene.tsv / id2name.tsv
-│   ├── deseq2.R                       # 差异分析（tximport + DESeq2 + 写结果表）
-│   ├── plot_ggplot2.R                 # 读结果表重画 MA / 火山图（ggplot2）
+│   ├── deseq2.R                       # 差异分析（tximport + DESeq2 + 出 MA/火山图）
+│   ├── plot_ggplot2.R                 # 独立重画图：读 deseq2_results.txt 重画 MA/火山图（不重跑差异分析）
 │   └── enrichment.R                   # GO BP / KEGG 富集 + 气泡图
 ├── results/
 │   ├── coldata.txt                    # 样本分组表（8 样本）
@@ -31,8 +31,8 @@ rnaseq-project/
 │   ├── GO_BP_enrichment.txt           # GO BP 富集显著条目
 │   └── KEGG_enrichment.txt            # KEGG 通路富集显著条目
 └── figures/
-    ├── MAplot_ggplot2.pdf / .png      # MA 图
-    ├── volcano_ggplot2.pdf / .png     # 火山图（标注 top 基因）
+    ├── MAplot.pdf / .png      # MA 图
+    ├── volcano.pdf / .png     # 火山图（标注 top 基因）
     ├── GO_dotplot.pdf / .png          # GO BP 富集气泡图
     └── KEGG_dotplot.pdf / .png        # KEGG 富集气泡图
 ```
@@ -50,7 +50,8 @@ rnaseq-project/
 
 1. 按 `RNA-seq_salmon全流程_操作清单.md` 第 1–6 节准备环境、下载数据、质控、salmon 定量；
 2. 运行 `scripts/make_tx2gene.py` 生成基因映射表；
-3. 依次运行 `scripts/deseq2.R` → `scripts/plot_ggplot2.R` → `scripts/enrichment.R`；
-4. 关键结果写入 `results/`，图输出到 `figures/`。
+3. 运行 `scripts/deseq2.R`（差异分析，输出结果表与 MA / 火山图）→ `scripts/enrichment.R`（GO/KEGG 富集）；
+4. （可选）`scripts/plot_ggplot2.R`：跳过差异分析，直接读 `deseq2_results.txt` 重画 MA / 火山图，适合单独调整图样式；
+5. 关键结果写入 `results/`，图输出到 `figures/`。
 
 环境：WSL Ubuntu + conda（rnaseq1 环境），R 4.x + Bioconductor（DESeq2 / tximport / clusterProfiler），salmon 1.x。

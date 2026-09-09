@@ -60,8 +60,8 @@ p1 <- ggplot(res, aes(x=baseMean, y=log2FoldChange)) +
        title="MA Plot — treated vs untreated", color=NULL) +
   theme_bw(base_size=13) +
   theme(legend.position="top", plot.title=element_text(face="bold"))
-ggsave("MAplot_ggplot2.pdf", p1, width=7.5, height=5.5)
-ggsave("MAplot_ggplot2.png", p1, width=7.5, height=5.5, dpi=300)
+ggsave("MAplot.pdf", p1, width=7.5, height=5.5)
+ggsave("MAplot.png", p1, width=7.5, height=5.5, dpi=300)
 
 # 11) 火山图（ggplot2，标注 top 10 基因）
 top <- head(res[order(res$padj, na.last=TRUE), ], 10)
@@ -77,7 +77,7 @@ p2 <- ggplot(res, aes(x=log2FoldChange, y=-log10(padj))) +
        title="Volcano Plot — treated vs untreated", color=NULL) +
   theme_bw(base_size=13) +
   theme(legend.position="top", plot.title=element_text(face="bold"))
-ggsave("volcano_ggplot2.pdf", p2, width=8, height=6)
-ggsave("volcano_ggplot2.png", p2, width=8, height=6, dpi=300)
+ggsave("volcano.pdf", p2, width=8, height=6)
+ggsave("volcano.png", p2, width=8, height=6, dpi=300)
 
-cat("完成！结果：deseq2_results.txt；图：MAplot_ggplot2.pdf/png、volcano_ggplot2.pdf/png\n")
+cat("完成！结果：deseq2_results.txt；图：MAplot.pdf/png、volcano.pdf/png\n")

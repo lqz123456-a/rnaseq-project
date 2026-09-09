@@ -34,8 +34,8 @@ p1 <- ggplot(res, aes(x=baseMean, y=log2FoldChange)) +
         plot.title=element_text(face="bold"),
         panel.grid.minor=element_blank())
 
-ggsave("MAplot_ggplot2.pdf", p1, width=7.5, height=5.5)
-ggsave("MAplot_ggplot2.png", p1, width=7.5, height=5.5, dpi=300)
+ggsave("MAplot.pdf", p1, width=7.5, height=5.5)
+ggsave("MAplot.png", p1, width=7.5, height=5.5, dpi=300)
 
 # ---------- 火山图 ----------
 # 按 padj 取 top 10 个基因用于标注（含 ZBTB16）
@@ -58,7 +58,7 @@ p2 <- ggplot(res, aes(x=log2FoldChange, y=-log10(padj))) +
         plot.title=element_text(face="bold"),
         panel.grid.minor=element_blank())
 
-ggsave("volcano_ggplot2.pdf", p2, width=8, height=6)
-ggsave("volcano_ggplot2.png", p2, width=8, height=6, dpi=300)
+ggsave("volcano.pdf", p2, width=8, height=6)
+ggsave("volcano.png", p2, width=8, height=6, dpi=300)
 
-cat("完成：MAplot_ggplot2.pdf/png、volcano_ggplot2.pdf/png\n")
+cat("完成：MAplot.pdf/png、volcano.pdf/png\n")

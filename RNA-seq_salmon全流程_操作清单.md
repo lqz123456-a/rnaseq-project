@@ -419,9 +419,9 @@ p1 <- ggplot(res, aes(x=baseMean, y=log2FoldChange)) +
 
   theme(legend.position="top", plot.title=element_text(face="bold"))
 
-ggsave("MAplot_ggplot2.pdf", p1, width=7.5, height=5.5)
+ggsave("MAplot.pdf", p1, width=7.5, height=5.5)
 
-ggsave("MAplot_ggplot2.png", p1, width=7.5, height=5.5, dpi=300)
+ggsave("MAplot.png", p1, width=7.5, height=5.5, dpi=300)
 
 # 11) 火山图（ggplot2，标注 top 10 基因）
 
@@ -451,11 +451,11 @@ p2 <- ggplot(res, aes(x=log2FoldChange, y=-log10(padj))) +
 
   theme(legend.position="top", plot.title=element_text(face="bold"))
 
-ggsave("volcano_ggplot2.pdf", p2, width=8, height=6)
+ggsave("volcano.pdf", p2, width=8, height=6)
 
-ggsave("volcano_ggplot2.png", p2, width=8, height=6, dpi=300)
+ggsave("volcano.png", p2, width=8, height=6, dpi=300)
 
-cat("完成！结果：deseq2_results.txt；图：MAplot_ggplot2.pdf/png、volcano_ggplot2.pdf/png\n")
+cat("完成！结果：deseq2_results.txt；图：MAplot.pdf/png、volcano.pdf/png\n")
 ```
 
 
@@ -610,7 +610,7 @@ R CMD INSTALL org.Hs.eg.db_3.22.0_src_all.tar.gz GO.db_3.22.0_src_all.tar.gz
 
 * [ ] `deseq2_results.txt` 有几千行、`padj` 有值
 
-* [ ] `MAplot_ggplot2.pdf/png`、`volcano_ggplot2.pdf/png` 有红 / 蓝显著点，火山图标注了 top 基因名（如 ZBTB16）
+* [ ] `MAplot.pdf/png`、`volcano.pdf/png` 有红 / 蓝显著点，火山图标注了 top 基因名（如 ZBTB16）
 
 * [ ] `GO_BP_enrichment.txt` 741 行条目、`KEGG_enrichment.txt` 109 行条目，两张气泡图正常（实测：GO Top 为激素应答 /actin 骨架，KEGG Top 为黏着斑 / PI3K-Akt，符合地塞米松数据生物学）
 
