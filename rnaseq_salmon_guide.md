@@ -3,7 +3,7 @@
 > **数据集：GSE52778「airway」** —— 人气道平滑肌细胞，地塞米松（dexamethasone）处理，DESeq2 官方教程使用的经典真实数据。8 个样本（4 对照 + 4 处理），双端测序。全部链接已于 2026-09-05 实测通过。
 >
 > **本版特点**：用 salmon（转录本拟比对 + 定量）替代 STAR，内存需求～4–8 GB，适配 7.6 GB 内存的 WSL 实测通过，不会 OOM。产出基因级差异表达结果（MA / 火山图）与 GO/KEGG 富集分析，不产出基因组 BAM。
-> 与 STAR 版的区别：① 不下载基因组 fasta（salmon 用不到）② 第 3 步变 salmon index ③ 第 6 步变 salmon quant ④ 第 8 步用 tximport 导入 DESeq2。
+> 与 STAR 版的区别：① 不下载基因组 fasta（salmon 不需要）② 第 3 步变 salmon index ③ 第 6 步变 salmon quant ④ 第 8 步用 tximport 导入 DESeq2。
 
 
 
@@ -15,14 +15,14 @@
 
 | 数据源                 | 性质         | 实测结果           | 结论           |
 | ------------------- | ---------- | -------------- | ------------ |
-| NCBI FTP（美国）        | SRA / 参考序列 | ❌ 连接超时         | **别用**       |
-| Ensembl 主站（英国）      | 参考基因组      | ❌ 连接超时         | **别用**       |
-| UCSC（美国）            | 参考基因组      | ❌ 连接超时         | **别用**       |
-| **EBI ENA（欧洲）**     | SRA 原始数据   | ✅ 200，0.8–1.7s | **用这个下原始数据** |
-| **EBI Ensembl（欧洲）** | 转录组 / GTF  | ✅ 200，0.9s     | **用这个下转录组**  |
+| NCBI FTP（美国）        | SRA / 参考序列 | 连接超时，建议改用 EBI 源 | 不推荐（国内访问不稳定） |
+| Ensembl 主站（英国）      | 参考基因组      | 连接超时，建议改用 EBI 源 | 不推荐（国内访问不稳定） |
+| UCSC（美国）            | 参考基因组      | 连接超时，建议改用 EBI 源 | 不推荐（国内访问不稳定） |
+| **EBI ENA（欧洲）**     | SRA 原始数据   | ✅ 200，0.8–1.7s | 推荐用于下载原始数据 |
+| **EBI Ensembl（欧洲）** | 转录组 / GTF  | ✅ 200，0.9s     | 推荐用于下载转录组  |
 | **NGDC 国家基因组中心**    | 国内数据 / 镜像  | ✅ 200，0.3s     | 备用           |
 | **CNGB 国家基因库**      | 国内数据 / 镜像  | ✅ 200，0.2s     | 备用           |
-| 清华 / 中科大 conda 镜像   | 软件         | ✅ 200，0.5–1.7s | 装软件用清华       |
+| 清华 / 中科大 conda 镜像   | 软件         | ✅ 200，0.5–1.7s | 推荐使用清华镜像加速 |
 
 **核心结论**：国内网络访问 "美国源"（NCBI/UCSC/Ensembl 主站）不稳定，因此本项目全部改用 "欧洲源 EBI + 国内源 NGDC/CNGB/ 清华镜像" 下载数据与安装软件。
 
@@ -74,7 +74,7 @@ conda activate rnaseq
 conda install -y r-base bioconductor-deseq2 bioconductor-tximport r-ggplot2 r-ggrepel bioconductor-clusterprofiler bioconductor-org.hs.eg.db
 ```
 
-> 若 `conda install` 这条事务卡死不动（实测多次挂起），拆开分步装：先装不含 clusterProfiler/org.Hs.eg.db 的依赖，再按第 9 节的源码包方式补这两个数据包。
+> 若 `conda install` 安装过程长时间无响应（实测多次挂起），可拆开分步安装：先装不含 clusterProfiler/org.Hs.eg.db 的依赖，再按第 9 节的源码包方式补这两个数据包。
 
 
 
@@ -116,7 +116,7 @@ cd ~/rnaseq
 salmon index -t ref/Homo_sapiens.GRCh38.cdna.all.fa.gz -i salmon_index
 ```
 
-> 如果内存仍然紧张，先关掉其他程序再跑。这一步一般 5–15 分钟。
+> 如果内存仍然紧张，可先关闭其他程序再运行。这一步一般 5–15 分钟。
 
 
 
@@ -347,7 +347,7 @@ names(files) <- samples
 
 # 3) 导入并汇总到基因级
 
-#    dropInfReps=TRUE   ：跳过 salmon 推断重复信息（读它需要 jsonlite，常规分析用不到）
+#    dropInfReps=TRUE   ：跳过 salmon 推断重复信息（读它需要 jsonlite，常规分析不需要）
 
 #    ignoreTxVersion=TRUE：忽略转录本 ID 的版本后缀（salmon 的 ENST...N vs tx2gene 的 ENST...）
 
@@ -568,7 +568,7 @@ Rscript enrichment.R
 
 这些条目与 "地塞米松（糖皮质激素）处理" 的已知生物学一致（激素应答、细胞骨架重塑、缺氧应答），说明分析流程可靠。
 
-> **如果 `conda install bioconductor-clusterprofiler` 卡死**（实测：多次在事务执行阶段无限挂起，与网络无关）：放弃 conda，直接从 Bioconductor 官方源装源码包（纯数据包无需编译）：
+> **如果 `conda install bioconductor-clusterprofiler` 安装过程长时间无响应**（实测：多次在事务执行阶段无限挂起，与网络无关）：可放弃 conda 路径，直接从 Bioconductor 官方源安装源码包（纯数据包无需编译）：
 
 ```
 # 下载完整源码包（Galaxy Depot 镜像，国内可达；下载后 md5sum 核对）
@@ -587,7 +587,7 @@ R CMD INSTALL org.Hs.eg.db_3.22.0_src_all.tar.gz GO.db_3.22.0_src_all.tar.gz
 
 # 其余依赖（clusterProfiler/DOSE/enrichplot 等）用 conda install 正常装，
 
-# 若同样卡死，可先装好除这两个数据包外的全部依赖，再按上面源码包方式补装
+# 若同样长时间无响应，可先装好除这两个数据包外的全部依赖，再按上面源码包方式补装
 ```
 
 > 安装后验证：`Rscript -e 'library(clusterProfiler); library(org.Hs.eg.db); cat("OK")'`。
@@ -628,13 +628,13 @@ R CMD INSTALL org.Hs.eg.db_3.22.0_src_all.tar.gz GO.db_3.22.0_src_all.tar.gz
 | ----------------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------- |
 | 下载中断                                                        | 网络波动                                | `wget -c` / `aria2c -c` 断点续传，重跑同一命令                                                           |
 | fastqc 报错 /multiqc 少数据                                      | fastq.gz 下载不完整（尾部 gzip 块丢失）         | `gzip -t <文件>` 检查，删除后重新下载                                                                     |
-| NCBI/UCSC 打不开                                               | 网络到美国源不通                          | 一律用 EBI ENA / EBI Ensembl / NGDC / CNGB                                                       |
+| NCBI/UCSC 打不开                                               | 网络到美国源不通                          | 改用 EBI ENA / EBI Ensembl / NGDC / CNGB                                                       |
 | conda 装包慢                                                   | 未配置镜像                               | 用第 1 节清华镜像 `.condarc`                                                                         |
-| salmon index 被杀（Killed）                                     | 内存不足                                | 关掉其他程序，或为 WSL 分配更多内存                                                            |
+| salmon index 被杀（Killed）                                     | 内存不足                                | 关闭其他程序，或为 WSL 分配更多内存                                                            |
 | tximport 报 "requires package jsonlite"                      | 读取 salmon 推断重复需要 jsonlite           | `tximport(..., dropInfReps=TRUE)` 跳过                                                          |
 | tximport 报 "None of the transcripts ... present in tx2gene" | 转录本 ID 版本后缀不一致（ENST...N vs ENST...） | `tximport(..., ignoreTxVersion=TRUE)`                                                         |
 | tximport 报错 / 基因数不对                                         | tx2gene.tsv 有问题                     | 重跑第 7 步 Python 脚本，确认有输出行数                                                                     |
 | DESeq2 报错列不匹配                                               | counts 与 coldata 顺序不一致              | 检查 `samples` 与 `coldata.txt` 行顺序完全一致                                                          |
 | R 报缺 ggplot2/ggrepel                                        | 未安装                                 | `conda install -y r-ggplot2 r-ggrepel`                                                        |
-| R 报缺 clusterProfiler/org.Hs.eg.db                           | 未安装                                 | `conda install -y bioconductor-clusterprofiler bioconductor-org.hs.eg.db`；若事务卡死，按第 9 节源码包方式补装 |
+| R 报缺 clusterProfiler/org.Hs.eg.db                           | 未安装                                 | `conda install -y bioconductor-clusterprofiler bioconductor-org.hs.eg.db`；若安装过程长时间无响应，按第 9 节源码包方式补装 |
 | enrichKEGG 报错或空白                                            | kegg.jp 连不上                         | 网络可达时用 KEGG；不通就跳过 KEGG，GO 结果已够用                                                               |
