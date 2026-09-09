@@ -1,15 +1,15 @@
 # 真实 RNA-seq 完整跑通・salmon 全流程版（国内网络专用）
 
-> **数据集：GSE52778「airway」** —— 人气道平滑肌细胞，地塞米松（dexamethasone）处理，DESeq2 官方教程使用的经典真实数据。8 个样本（4 对照 + 4 处理），双端测序。全部链接已于 2026-09-05 在本机网络实测通过。
+> **数据集：GSE52778「airway」** —— 人气道平滑肌细胞，地塞米松（dexamethasone）处理，DESeq2 官方教程使用的经典真实数据。8 个样本（4 对照 + 4 处理），双端测序。全部链接已于 2026-09-05 实测通过。
 >
-> **本版特点**：用 salmon（转录本拟比对 + 定量）替代 STAR，内存需求～4–8 GB，适配本机 WSL 7.6 GB 的环境，不会 OOM。产出基因级差异表达结果（MA / 火山图）与 GO/KEGG 富集分析，不产出基因组 BAM。
+> **本版特点**：用 salmon（转录本拟比对 + 定量）替代 STAR，内存需求～4–8 GB，适配 7.6 GB 内存的 WSL 实测通过，不会 OOM。产出基因级差异表达结果（MA / 火山图）与 GO/KEGG 富集分析，不产出基因组 BAM。
 > 与 STAR 版的区别：① 不下载基因组 fasta（salmon 用不到）② 第 3 步变 salmon index ③ 第 6 步变 salmon quant ④ 第 8 步用 tximport 导入 DESeq2。
 
 
 
 ***
 
-## 0. 为什么之前下载总失败（已在本机实测）
+## 0. 网络实测与数据源选择（国内网络适配）
 
 
 
@@ -24,7 +24,7 @@
 | **CNGB 国家基因库**      | 国内数据 / 镜像  | ✅ 200，0.2s     | 备用           |
 | 清华 / 中科大 conda 镜像   | 软件         | ✅ 200，0.5–1.7s | 装软件用清华       |
 
-**核心结论：本机网络到 "美国源"（NCBI/UCSC/Ensembl 主站）基本不通，这是之前所有下载失败的根源；解决办法是全部改用 "欧洲源 EBI + 国内源 NGDC/CNGB/ 清华镜像"。**
+**核心结论**：国内网络访问 "美国源"（NCBI/UCSC/Ensembl 主站）不稳定，因此本项目全部改用 "欧洲源 EBI + 国内源 NGDC/CNGB/ 清华镜像" 下载数据与安装软件。
 
 
 
@@ -74,8 +74,7 @@ conda activate rnaseq
 conda install -y r-base bioconductor-deseq2 bioconductor-tximport r-ggplot2 r-ggrepel bioconductor-clusterprofiler bioconductor-org.hs.eg.db
 ```
 
-> 若 `conda install` 这条事务卡死不动（本机实测三次挂起），拆开分步装：先装不含 clusterProfiler/org.Hs.eg.db 的依赖，再按第 9 节的源码包方式补这两个数据包。
-> 可选优化：若想让本机 WSL 内存更充裕（salmon 其实不需要，但能加快建索引），可在 Windows 建 `C:\Users\<用户名>\.wslconfig` 写入 `[wsl2]` + `memory=12GB` + `swap=8GB`，然后 `wsl --shutdown` 重启。
+> 若 `conda install` 这条事务卡死不动（实测多次挂起），拆开分步装：先装不含 clusterProfiler/org.Hs.eg.db 的依赖，再按第 9 节的源码包方式补这两个数据包。
 
 
 
@@ -102,13 +101,12 @@ gzip -dk Homo_sapiens.GRCh38.116.gtf.gz
 ```
 
 > 下载太慢 / 中断：`wget -c` 断点续传；更快用 `aria2c -x 16 -s 16 -c <URL>`。
-> 若之前已下载过基因组 fasta（GRCh38.dna.primary_assembly.fa），**保留即可** —— 本版用不到，以后跑 STAR / 变异分析还用得上，不浪费。
 
 
 
 ***
 
-## 3. 建 salmon 索引（内存～4–8 GB，本机 7.6 GB 的 WSL 可跑）
+## 3. 建 salmon 索引（内存～4–8 GB，7.6 GB 内存实测可跑）
 
 
 
@@ -472,9 +470,9 @@ Rscript deseq2.R
 
 ## 9. GO/KEGG 富集分析（最后一步，做完即收尾）
 
-**富集分析的原理**：差异分析只回答 "哪些基因变了"，富集分析把显著基因放到 "功能 / 通路" 层面 —— 比如 "这批基因富集在免疫应答相关通路"，让结果有生物学意义，是面试讲 "所以呢" 的关键一环。
+**富集分析的原理**：差异分析只回答 "哪些基因变了"，富集分析把显著基因放到 "功能 / 通路" 层面 —— 比如 "这批基因富集在免疫应答相关通路"，让结果有生物学意义。
 
-**R 脚本 `enrichment.R`（clusterProfiler，已在本机实测可跑）：**
+**R 脚本 `enrichment.R`（clusterProfiler，已实测可跑）：**
 
 
 
@@ -519,7 +517,7 @@ if (nrow(as.data.frame(ego)) > 0) {
 
 } else { cat("GO 无显著富集项\n") }
 
-# ---- KEGG 通路富集（需联网访问 kegg.jp，本机网络已实测可达）----
+# ---- KEGG 通路富集（需联网访问 kegg.jp，网络已实测可达）----
 
 gene_entrez <- bitr(sig, fromType="ENSEMBL", toType="ENTREZID", OrgDb=org.Hs.eg.db)
 
@@ -552,7 +550,7 @@ Rscript enrichment.R
 
 **产出**：`GO_BP_enrichment.txt`、`KEGG_enrichment.txt`（结果表）+ `GO_dotplot.pdf/png`、`KEGG_dotplot.pdf/png`（气泡图）。
 
-**本机实测结果（真实运行数字，可直接用于简历 / 面试）：**
+**实测结果（真实运行产出）：**
 
 
 
@@ -568,9 +566,9 @@ Rscript enrichment.R
 | KEGG Top：PI3K-Akt signaling pathway                  | padj=3.4e-06，75 基因 |
 | KEGG Top：Regulation of actin cytoskeleton            | padj=3.4e-06，54 基因 |
 
-这些条目与 "地塞米松（糖皮质激素）处理" 的已知生物学一致（激素应答、细胞骨架重塑、缺氧应答），面试时能讲出 "结果符合预期，说明分析流程可靠"。
+这些条目与 "地塞米松（糖皮质激素）处理" 的已知生物学一致（激素应答、细胞骨架重塑、缺氧应答），说明分析流程可靠。
 
-> **如果 `conda install bioconductor-clusterprofiler` 卡死**（本机实测：三次都在事务执行阶段无限挂起，与网络无关）：放弃 conda，直接从 Bioconductor 官方源装源码包（纯数据包无需编译）：
+> **如果 `conda install bioconductor-clusterprofiler` 卡死**（实测：多次在事务执行阶段无限挂起，与网络无关）：放弃 conda，直接从 Bioconductor 官方源装源码包（纯数据包无需编译）：
 
 ```
 # 下载完整源码包（Galaxy Depot 镜像，国内可达；下载后 md5sum 核对）
@@ -593,13 +591,12 @@ R CMD INSTALL org.Hs.eg.db_3.22.0_src_all.tar.gz GO.db_3.22.0_src_all.tar.gz
 ```
 
 > 安装后验证：`Rscript -e 'library(clusterProfiler); library(org.Hs.eg.db); cat("OK")'`。
-> 面试点：能解释 ORA（超几何检验，只看显著基因）就够；被问 GSEA 时答 "GSEA 用全部基因的排序信息、不丢不显著基因，是 ORA 的补充，我这次用的是 ORA"。
 
 
 
 ***
 
-## 10. 跑通后的自检 + 面试谈资
+## 10. 跑通后的自检
 
 **自检清单：**
 
@@ -615,17 +612,9 @@ R CMD INSTALL org.Hs.eg.db_3.22.0_src_all.tar.gz GO.db_3.22.0_src_all.tar.gz
 
 * [ ] `MAplot_ggplot2.pdf/png`、`volcano_ggplot2.pdf/png` 有红 / 蓝显著点，火山图标注了 top 基因名（如 ZBTB16）
 
-* [ ] `GO_BP_enrichment.txt` 741 行条目、`KEGG_enrichment.txt` 109 行条目，两张气泡图正常（本机实测：GO Top 为激素应答 /actin 骨架，KEGG Top 为黏着斑 / PI3K-Akt，符合地塞米松数据生物学）
+* [ ] `GO_BP_enrichment.txt` 741 行条目、`KEGG_enrichment.txt` 109 行条目，两张气泡图正常（实测：GO Top 为激素应答 /actin 骨架，KEGG Top 为黏着斑 / PI3K-Akt，符合地塞米松数据生物学）
 
-* [ ] 能脱稿解释：salmon 拟比对是什么、为什么用 tximport、DESeq2 的 padj 是什么、为什么原始 count 不能直接 t 检验、ORA 富集是什么
 
-**简历 / 面试可以这样写：**
-
-> "使用 salmon + tximport + DESeq2 对真实公开 RNA-seq 数据（GSE52778，人气道平滑肌细胞地塞米松处理，4v4）完成转录本定量与差异表达分析，鉴定出 2140 个显著差异基因（padj<0.05），头号差异基因 ZBTB16 为已知糖皮质激素靶点；GO 富集到 741 个生物学过程条目（Top：激素应答、低氧应答、细胞骨架调控），KEGG 富集到 109 条通路（Top：黏着斑、PI3K-Akt 信号通路），结果与地塞米松已知生物学一致；用 ggplot2 产出发表级 MA / 火山图与富集气泡图；使用 conda 管理环境并配置国内镜像解决公共数据库访问问题。"
-
-**被问 "salmon 和 STAR 的区别" 的标准答法：**
-
-> "STAR 是把 reads 比对到基因组、产出 BAM，适合需要剪接 / 变异分析的场景；salmon 做转录本拟比对直接定量，速度快、内存低，适合以差异表达为目的的分析，两者都是主流方法。我本机内存有限，所以选了 salmon。"
 
 
 
@@ -639,9 +628,9 @@ R CMD INSTALL org.Hs.eg.db_3.22.0_src_all.tar.gz GO.db_3.22.0_src_all.tar.gz
 | ----------------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------- |
 | 下载中断                                                        | 网络波动                                | `wget -c` / `aria2c -c` 断点续传，重跑同一命令                                                           |
 | fastqc 报错 /multiqc 少数据                                      | fastq.gz 下载不完整（尾部 gzip 块丢失）         | `gzip -t <文件>` 检查，删除后重新下载                                                                     |
-| NCBI/UCSC 打不开                                               | 本机网络到美国源不通                          | 一律用 EBI ENA / EBI Ensembl / NGDC / CNGB                                                       |
+| NCBI/UCSC 打不开                                               | 网络到美国源不通                          | 一律用 EBI ENA / EBI Ensembl / NGDC / CNGB                                                       |
 | conda 装包慢                                                   | 未配置镜像                               | 用第 1 节清华镜像 `.condarc`                                                                         |
-| salmon index 被杀（Killed）                                     | 内存不足                                | 关掉其他程序；或 .wslconfig 提 WSL 内存到 12GB                                                            |
+| salmon index 被杀（Killed）                                     | 内存不足                                | 关掉其他程序，或为 WSL 分配更多内存                                                            |
 | tximport 报 "requires package jsonlite"                      | 读取 salmon 推断重复需要 jsonlite           | `tximport(..., dropInfReps=TRUE)` 跳过                                                          |
 | tximport 报 "None of the transcripts ... present in tx2gene" | 转录本 ID 版本后缀不一致（ENST...N vs ENST...） | `tximport(..., ignoreTxVersion=TRUE)`                                                         |
 | tximport 报错 / 基因数不对                                         | tx2gene.tsv 有问题                     | 重跑第 7 步 Python 脚本，确认有输出行数                                                                     |
