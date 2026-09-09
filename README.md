@@ -13,6 +13,21 @@
 | 可视化 | ggplot2 | MA 图、火山图（含 top 基因标注） |
 | 富集分析 | clusterProfiler | GO BP / KEGG 通路富集（ORA） |
 
+## 分析流程
+
+```mermaid
+graph LR
+    A[原始 FASTQ<br>8 samples] --> B[FastQC + MultiQC]
+    B --> C[salmon quant<br>转录本定量]
+    D[Ensembl cdna + GTF] --> E[salmon index]
+    E --> C
+    C --> F[tximport<br>tx2gene 汇总]
+    F --> G[DESeq2<br>差异分析]
+    G --> H[MA Plot]
+    G --> I[Volcano Plot]
+    G --> J[clusterProfiler<br>GO/KEGG 富集]
+```
+
 ## 目录结构
 
 ```
