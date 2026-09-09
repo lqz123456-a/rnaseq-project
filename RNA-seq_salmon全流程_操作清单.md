@@ -1,15 +1,15 @@
 # 真实 RNA-seq 完整跑通・salmon 全流程版（国内网络专用）
 
-> **数据集：GSE52778「airway」** —— 人气道平滑肌细胞，地塞米松（dexamethasone）处理，DESeq2 官方教程使用的经典真实数据。8 个样本（4 对照 + 4 处理），双端测序。全部链接已于 2026-09-05 在你当前网络实测通过。
+> **数据集：GSE52778「airway」** —— 人气道平滑肌细胞，地塞米松（dexamethasone）处理，DESeq2 官方教程使用的经典真实数据。8 个样本（4 对照 + 4 处理），双端测序。全部链接已于 2026-09-05 在本机网络实测通过。
 >
-> **本版特点**：用 salmon（转录本拟比对 + 定量）替代 STAR，内存需求～4–8 GB，适配你 WSL 7.6 GB 的环境，不会 OOM。产出基因级差异表达结果（MA / 火山图）与 GO/KEGG 富集分析，不产出基因组 BAM。
+> **本版特点**：用 salmon（转录本拟比对 + 定量）替代 STAR，内存需求～4–8 GB，适配本机 WSL 7.6 GB 的环境，不会 OOM。产出基因级差异表达结果（MA / 火山图）与 GO/KEGG 富集分析，不产出基因组 BAM。
 > 与 STAR 版的区别：① 不下载基因组 fasta（salmon 用不到）② 第 3 步变 salmon index ③ 第 6 步变 salmon quant ④ 第 8 步用 tximport 导入 DESeq2。
 
 
 
 ***
 
-## 0. 为什么你之前下载总失败（已在你机器上实测）
+## 0. 为什么之前下载总失败（已在本机实测）
 
 
 
@@ -24,7 +24,7 @@
 | **CNGB 国家基因库**      | 国内数据 / 镜像  | ✅ 200，0.2s     | 备用           |
 | 清华 / 中科大 conda 镜像   | 软件         | ✅ 200，0.5–1.7s | 装软件用清华       |
 
-**核心结论：你网络到 "美国源"（NCBI/UCSC/Ensembl 主站）基本不通，这是之前所有下载失败的根源；解决办法是全部改用 "欧洲源 EBI + 国内源 NGDC/CNGB/ 清华镜像"。**
+**核心结论：本机网络到 "美国源"（NCBI/UCSC/Ensembl 主站）基本不通，这是之前所有下载失败的根源；解决办法是全部改用 "欧洲源 EBI + 国内源 NGDC/CNGB/ 清华镜像"。**
 
 
 
@@ -75,7 +75,7 @@ conda install -y r-base bioconductor-deseq2 bioconductor-tximport r-ggplot2 r-gg
 ```
 
 > 若 `conda install` 这条事务卡死不动（本机实测三次挂起），拆开分步装：先装不含 clusterProfiler/org.Hs.eg.db 的依赖，再按第 9 节的源码包方式补这两个数据包。
-> 可选优化：如果你想让 WSL 内存更充裕（salmon 其实不需要，但能加快建索引），可在 Windows 建 `C:\Users\luo\.wslconfig` 写入 `[wsl2]` + `memory=12GB` + `swap=8GB`，然后 `wsl --shutdown` 重启。
+> 可选优化：若想让本机 WSL 内存更充裕（salmon 其实不需要，但能加快建索引），可在 Windows 建 `C:\Users\<用户名>\.wslconfig` 写入 `[wsl2]` + `memory=12GB` + `swap=8GB`，然后 `wsl --shutdown` 重启。
 
 
 
@@ -102,13 +102,13 @@ gzip -dk Homo_sapiens.GRCh38.116.gtf.gz
 ```
 
 > 下载太慢 / 中断：`wget -c` 断点续传；更快用 `aria2c -x 16 -s 16 -c <URL>`。
-> 如果你之前已经下载过基因组 fasta（GRCh38.dna.primary_assembly.fa），**保留即可** —— 本版用不到，以后跑 STAR / 变异分析还用得上，不浪费。
+> 若之前已下载过基因组 fasta（GRCh38.dna.primary_assembly.fa），**保留即可** —— 本版用不到，以后跑 STAR / 变异分析还用得上，不浪费。
 
 
 
 ***
 
-## 3. 建 salmon 索引（内存～4–8 GB，你 7.6 GB 的 WSL 能跑）
+## 3. 建 salmon 索引（内存～4–8 GB，本机 7.6 GB 的 WSL 可跑）
 
 
 
@@ -472,9 +472,9 @@ Rscript deseq2.R
 
 ## 9. GO/KEGG 富集分析（最后一步，做完即收尾）
 
-**富集分析的原理**：差异分析只告诉你 "哪些基因变了"，富集分析把显著基因放到 "功能 / 通路" 层面 —— 比如 "这批基因富集在免疫应答相关通路"，让结果有生物学意义，是面试讲 "所以呢" 的关键一环。
+**富集分析的原理**：差异分析只回答 "哪些基因变了"，富集分析把显著基因放到 "功能 / 通路" 层面 —— 比如 "这批基因富集在免疫应答相关通路"，让结果有生物学意义，是面试讲 "所以呢" 的关键一环。
 
-**R 脚本 `enrichment.R`（clusterProfiler，已在你机器上实测可跑）：**
+**R 脚本 `enrichment.R`（clusterProfiler，已在本机实测可跑）：**
 
 
 
@@ -519,7 +519,7 @@ if (nrow(as.data.frame(ego)) > 0) {
 
 } else { cat("GO 无显著富集项\n") }
 
-# ---- KEGG 通路富集（需联网访问 kegg.jp，你网络已实测可达）----
+# ---- KEGG 通路富集（需联网访问 kegg.jp，本机网络已实测可达）----
 
 gene_entrez <- bitr(sig, fromType="ENSEMBL", toType="ENTREZID", OrgDb=org.Hs.eg.db)
 
@@ -552,7 +552,7 @@ Rscript enrichment.R
 
 **产出**：`GO_BP_enrichment.txt`、`KEGG_enrichment.txt`（结果表）+ `GO_dotplot.pdf/png`、`KEGG_dotplot.pdf/png`（气泡图）。
 
-**本机实测结果（你跑出来的真实数字，可直接用于简历 / 面试）：**
+**本机实测结果（真实运行数字，可直接用于简历 / 面试）：**
 
 
 
@@ -617,7 +617,7 @@ R CMD INSTALL org.Hs.eg.db_3.22.0_src_all.tar.gz GO.db_3.22.0_src_all.tar.gz
 
 * [ ] `GO_BP_enrichment.txt` 741 行条目、`KEGG_enrichment.txt` 109 行条目，两张气泡图正常（本机实测：GO Top 为激素应答 /actin 骨架，KEGG Top 为黏着斑 / PI3K-Akt，符合地塞米松数据生物学）
 
-* [ ] 你能脱稿解释：salmon 拟比对是什么、为什么用 tximport、DESeq2 的 padj 是什么、为什么原始 count 不能直接 t 检验、ORA 富集是什么
+* [ ] 能脱稿解释：salmon 拟比对是什么、为什么用 tximport、DESeq2 的 padj 是什么、为什么原始 count 不能直接 t 检验、ORA 富集是什么
 
 **简历 / 面试可以这样写：**
 
@@ -639,7 +639,7 @@ R CMD INSTALL org.Hs.eg.db_3.22.0_src_all.tar.gz GO.db_3.22.0_src_all.tar.gz
 | ----------------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------- |
 | 下载中断                                                        | 网络波动                                | `wget -c` / `aria2c -c` 断点续传，重跑同一命令                                                           |
 | fastqc 报错 /multiqc 少数据                                      | fastq.gz 下载不完整（尾部 gzip 块丢失）         | `gzip -t <文件>` 检查，删除后重新下载                                                                     |
-| NCBI/UCSC 打不开                                               | 你的网络到美国源不通                          | 一律用 EBI ENA / EBI Ensembl / NGDC / CNGB                                                       |
+| NCBI/UCSC 打不开                                               | 本机网络到美国源不通                          | 一律用 EBI ENA / EBI Ensembl / NGDC / CNGB                                                       |
 | conda 装包慢                                                   | 未配置镜像                               | 用第 1 节清华镜像 `.condarc`                                                                         |
 | salmon index 被杀（Killed）                                     | 内存不足                                | 关掉其他程序；或 .wslconfig 提 WSL 内存到 12GB                                                            |
 | tximport 报 "requires package jsonlite"                      | 读取 salmon 推断重复需要 jsonlite           | `tximport(..., dropInfReps=TRUE)` 跳过                                                          |
