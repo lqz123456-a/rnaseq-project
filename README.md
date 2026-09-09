@@ -17,7 +17,7 @@
 
 ```
 rnaseq-project/
-├── RNA-seq_salmon全流程_操作清单.md   # 全流程可照做复现文档（含排障表）
+├── rnaseq_salmon_guide.md            # 全流程可照做复现文档（含排障表）
 ├── scripts/
 │   ├── make_tx2gene.py                # 从 GTF 生成 tx2gene.tsv / id2name.tsv
 │   ├── deseq2.R                       # 差异分析（tximport + DESeq2 + 出 MA/火山图）
@@ -48,10 +48,10 @@ rnaseq-project/
 
 ## 复现
 
-1. 按 `RNA-seq_salmon全流程_操作清单.md` 第 1–6 节准备环境、下载数据、质控、salmon 定量；
+1. 按 `rnaseq_salmon_guide.md` 第 1–6 节准备环境、下载数据、质控、salmon 定量；
 2. 运行 `scripts/make_tx2gene.py` 生成基因映射表；
 3. 运行 `scripts/deseq2.R`（差异分析，输出结果表与 MA / 火山图）→ `scripts/enrichment.R`（GO/KEGG 富集）；
 4. （可选）`scripts/plot_ggplot2.R`：跳过差异分析，直接读 `deseq2_results.txt` 重画 MA / 火山图，适合单独调整图样式；
 5. 关键结果写入 `results/`，图输出到 `figures/`。
 
-环境：WSL Ubuntu + conda（rnaseq1 环境），R 4.x + Bioconductor（DESeq2 / tximport / clusterProfiler），salmon 1.x。
+环境：WSL Ubuntu + conda（rnaseq 环境），R 4.x + Bioconductor（DESeq2 / tximport / clusterProfiler），salmon 1.x。
