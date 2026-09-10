@@ -69,4 +69,4 @@ rnaseq-project/
 4. （可选）`scripts/plot_ggplot2.R`：跳过差异分析，直接读 `deseq2_results.txt` 重画 MA / 火山图，适合单独调整图样式；
 5. 关键结果写入 `results/`，图输出到 `figures/`。
 
-环境：WSL Ubuntu + conda（rnaseq 环境），R 4.x + Bioconductor（DESeq2 / tximport / clusterProfiler），salmon 1.x。
+环境：WSL Ubuntu + conda（rnaseq 环境），R 4.5.3 + Bioconductor（DESeq2 1.50.2 / tximport 1.38.2 / clusterProfiler 4.18.4），salmon 2.7.0（完整版本表见 `rnaseq_salmon_guide.md` 第 1 节）。

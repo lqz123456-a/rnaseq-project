@@ -55,6 +55,26 @@ conda activate rnaseq
 conda install -y r-base bioconductor-deseq2 bioconductor-tximport r-ggplot2 r-ggrepel bioconductor-clusterprofiler bioconductor-org.hs.eg.db
 ```
 
+**本流程实测版本（2026-09 验证，`rnaseq` 环境）：**
+
+| 工具 / 包 | 版本（实测） | 用途 | 安装方式 |
+| --- | --- | --- | --- |
+| fastqc | 0.12.1 | 质控 | conda（第 1 节命令） |
+| multiqc | 1.35 | 质控汇总报告 | conda |
+| fastp | 1.3.6 | 可选修剪 | conda |
+| salmon | 2.7.0 | 转录本拟比对定量 | conda |
+| aria2 | 1.37.0 | 多线程断点下载 | conda |
+| python | 3.14.7 | 第 7 步映射脚本 | conda |
+| R | 4.5.3 | 差异分析 / 绘图 / 富集 | conda（r-base） |
+| DESeq2 | 1.50.2 | 差异表达分析 | conda（bioconductor） |
+| tximport | 1.38.2 | 转录本汇总到基因 | conda（bioconductor） |
+| ggplot2 | 4.0.3 | MA / 火山图 / 富集气泡图 | conda |
+| ggrepel | 0.9.8 | 火山图基因标签 | conda |
+| clusterProfiler | 4.18.4 | GO / KEGG 富集 | conda（bioconductor） |
+| org.Hs.eg.db | 3.22.0 | 基因注释（GO） | 源码包（conda 无响应时按第 9 节） |
+| GO.db | 3.22.0 | GO 注释数据 | 源码包（同上） |
+
+> 如需精确复现相同版本，可在 `conda install` 中用 `包名=版本` 指定（如 `salmon=2.7.0`、`bioconductor-deseq2=1.50.2`）；org.Hs.eg.db / GO.db 若 conda 安装无响应，按第 9 节源码包方式安装。
 > 若 `conda install` 安装过程长时间无响应（实测多次挂起），可拆开分步安装：先装不含 clusterProfiler/org.Hs.eg.db 的依赖，再按第 9 节的源码包方式补这两个数据包。
 
 
