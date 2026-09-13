@@ -144,3 +144,7 @@ Rscript scripts/plot_ggplot2.R
 - 原始测序数据：EBI ENA，样本编号见复现指南第 4 节
 - 关联论文：Himes et al. (2014)，[DOI: 10.1371/journal.pone.0099625](https://doi.org/10.1371/journal.pone.0099625)
 - 参考转录组和注释：[Ensembl GRCh38 release-116](https://ftp.ensembl.org/pub/release-116/)
+
+## 许可证
+
+除非文件中另有说明，本项目原创的代码、文档和展示图片采用 [MIT License](LICENSE)。GEO、ENA、Ensembl 以及论文提供的原始数据、注释和第三方资源仍遵循其各自的来源条款。
