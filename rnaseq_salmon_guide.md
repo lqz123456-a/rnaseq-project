@@ -1,641 +1,336 @@
-# 真实 RNA-seq 完整跑通・salmon 全流程版（国内网络专用）
+# RNA-seq 完整复现指南（salmon + DESeq2）
 
-> **数据集：GSE52778「airway」** —— 人气道平滑肌细胞，地塞米松（dexamethasone）处理，DESeq2 官方教程使用的经典真实数据。8 个样本（4 对照 + 4 处理），双端测序。全部链接已于 2026-09-05 实测通过。
+本指南用于复现 GSE52778「airway」数据集的处理流程：从 ENA 下载 paired-end 50bp FASTQ，使用 FastQC/MultiQC 质控、salmon 定量、tximport 汇总和 DESeq2 差异分析，最后完成 ggplot2 可视化与 GO/KEGG 富集。
+
+> 数据集包含 8 个气道平滑肌细胞样本，即 4 对细胞系的处理与对照。当前 `deseq2.R` 使用 `design=~condition` 的简化非配对模型；更严格的复现可加入细胞系协变量，使用 `~ cell + condition`。
 >
-> **数据源选型**：国内网络访问 NCBI/UCSC/Ensembl 主站不稳定，因此全流程改用 **EBI ENA + EBI Ensembl + 清华 conda 镜像**（2026-09 实测可达）。
->
-> **本版特点**：用 salmon（转录本拟比对 + 定量）替代 STAR，内存需求～4–8 GB，适配 7.6 GB 内存的 WSL 实测通过，不会 OOM。产出基因级差异表达结果（MA / 火山图）与 GO/KEGG 富集分析，不产出基因组 BAM。
-> 与 STAR 版的区别：① 不下载基因组 fasta（salmon 不需要）② 第 3 步变 salmon index ③ 第 6 步变 salmon quant ④ 第 8 步用 tximport 导入 DESeq2。
+> 本指南在 conda 命令中显式使用 `conda-forge` 和 `bioconda`。国内网络下载缓慢时可额外配置清华镜像，但安装命令的渠道声明保持不变。
 
+## 目录
 
+- [0. 工作目录约定](#0-工作目录约定)
+- [1. 环境准备](#1-环境准备)
+- [2. 下载参考转录组和注释](#2-下载参考转录组和注释)
+- [3. 构建 salmon 索引](#3-构建-salmon-索引)
+- [4. 下载 GSE52778 原始数据](#4-下载-gse52778-原始数据)
+- [5. 质控](#5-质控)
+- [6. salmon 定量](#6-salmon-定量)
+- [7. 生成 tx2gene、id2name 和样本表](#7-生成-tx2geneid2name-和样本表)
+- [8. 差异表达分析](#8-差异表达分析)
+- [9. GO 和 KEGG 富集](#9-go-和-kegg-富集)
+- [10. 可选：单独重画 MA 图和火山图](#10-可选单独重画-ma-图和火山图)
+- [11. 自检](#11-自检)
+- [12. 常见问题](#12-常见问题)
+- [13. 数据来源](#13-数据来源)
 
-***
+## 0. 工作目录约定
 
-## 1. 环境准备（conda 配置清华镜像）
+以下命令默认从项目根目录执行。示例使用 `~/rnaseq`：
 
-
-
+```bash
+export PROJECT_ROOT="$HOME/rnaseq"
+mkdir -p "$PROJECT_ROOT"
+cd "$PROJECT_ROOT"
 ```
+
+克隆仓库后包含脚本和文档；运行流程后会额外生成：
+
+```text
+docs/images/  # README 展示用 PNG，已纳入 Git
+scripts/
+results/    # 本地结果，不纳入 Git
+figures/    # 本地图片，不纳入 Git
+ref/        # 不纳入 Git
+fastq/      # 不纳入 Git
+quant/      # 不纳入 Git
+```
+
+所有脚本根据自身位置定位项目根目录。参考文件从 `ref/` 读取，salmon 定量从 `quant/` 读取，样本表从 `results/coldata.txt` 读取；结果表写入 `results/`，图片写入 `figures/`。`results/` 和 `figures/` 仅保留在本地，不会上传到 GitHub；仓库仅保留 `docs/images/` 中用于 README 展示的 PNG 副本。
+
+## 1. 环境准备
+
+创建 conda 环境并安装主要工具：
+
+```bash
+conda create -n rnaseq -y -c conda-forge -c bioconda python=3.14 fastqc multiqc fastp salmon aria2
+conda activate rnaseq
+conda install -y -c conda-forge -c bioconda r-base bioconductor-deseq2 bioconductor-tximport r-ggplot2 r-ggrepel bioconductor-clusterprofiler bioconductor-org.hs.eg.db
+```
+
+国内网络下载 conda 包较慢时，可选配置清华镜像。没有网络限制时无需设置：
+
+```bash
 conda config --set show_channel_urls yes
 ```
 
-编辑 `~/.condarc`，写入：
-
-
-
-```
+```yaml
 channels:
-
   - defaults
-
+  - conda-forge
+  - bioconda
 default_channels:
-
   - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main
-
   - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/free
-
   - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/r
-
 custom_channels:
-
   conda-forge: https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud
-
   bioconda: https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud
 ```
 
-创建分析环境并安装工具（salmon 替代 star/subread）：
+如果 `clusterProfiler` 或注释包的 conda 安装长时间无响应，可先安装其余依赖，再按第 9 节的源码包方案补装。
 
+### 本次运行版本快照
 
+| 工具 / 包 | 版本 | 用途 |
+| --- | --- | --- |
+| FastQC | 0.12.1 | 原始数据质控 |
+| MultiQC | 1.35 | 质控报告汇总 |
+| fastp | 1.3.6 | 可选修剪，本流程未执行 |
+| salmon | 2.7.0 | 转录本定量 |
+| aria2 | 1.37.0 | 多线程下载 |
+| Python | 3.14.7 | 生成转录本和基因映射 |
+| R | 4.5.3 | 差异分析、绘图和富集 |
+| DESeq2 | 1.50.2 | 差异表达分析 |
+| tximport | 1.38.2 | 转录本汇总到基因 |
+| ggplot2 | 4.0.3 | MA 图、火山图和气泡图 |
+| ggrepel | 0.9.8 | 火山图标签避让 |
+| clusterProfiler | 4.18.4 | GO / KEGG 富集 |
+| org.Hs.eg.db | 3.22.0 | 人类基因注释 |
+| GO.db | 3.22.0 | GO 注释数据 |
 
-```
-conda create -n rnaseq -y fastqc multiqc fastp salmon aria2
+如需固定版本，可在安装命令中显式指定，例如 `salmon=2.7.0` 或 `bioconductor-deseq2=1.50.2`。当前仓库没有附带 `environment.yml` 或 `renv.lock`，以上表格只是实测快照，不代表后续安装会自动得到完全相同的版本；在线资源和富集结果可能随时间变化。
 
-conda activate rnaseq
+## 2. 下载参考转录组和注释
 
-conda install -y r-base bioconductor-deseq2 bioconductor-tximport r-ggplot2 r-ggrepel bioconductor-clusterprofiler bioconductor-org.hs.eg.db
-```
+salmon 只需要 cDNA 序列和 GTF，不需要基因组 FASTA：
 
-**本流程实测版本（2026-09 验证，`rnaseq` 环境）：**
-
-| 工具 / 包 | 版本（实测） | 用途 | 安装方式 |
-| --- | --- | --- | --- |
-| fastqc | 0.12.1 | 质控 | conda（第 1 节命令） |
-| multiqc | 1.35 | 质控汇总报告 | conda |
-| fastp | 1.3.6 | 可选修剪 | conda |
-| salmon | 2.7.0 | 转录本拟比对定量 | conda |
-| aria2 | 1.37.0 | 多线程断点下载 | conda |
-| python | 3.14.7 | 第 7 步映射脚本 | conda |
-| R | 4.5.3 | 差异分析 / 绘图 / 富集 | conda（r-base） |
-| DESeq2 | 1.50.2 | 差异表达分析 | conda（bioconductor） |
-| tximport | 1.38.2 | 转录本汇总到基因 | conda（bioconductor） |
-| ggplot2 | 4.0.3 | MA / 火山图 / 富集气泡图 | conda |
-| ggrepel | 0.9.8 | 火山图基因标签 | conda |
-| clusterProfiler | 4.18.4 | GO / KEGG 富集 | conda（bioconductor） |
-| org.Hs.eg.db | 3.22.0 | 基因注释（GO） | 源码包（conda 无响应时按第 9 节） |
-| GO.db | 3.22.0 | GO 注释数据 | 源码包（同上） |
-
-> 如需精确复现相同版本，可在 `conda install` 中用 `包名=版本` 指定（如 `salmon=2.7.0`、`bioconductor-deseq2=1.50.2`）；org.Hs.eg.db / GO.db 若 conda 安装无响应，按第 9 节源码包方式安装。
-> 若 `conda install` 安装过程长时间无响应（实测多次挂起），可拆开分步安装：先装不含 clusterProfiler/org.Hs.eg.db 的依赖，再按第 9 节的源码包方式补这两个数据包。
-
-
-
-***
-
-## 2. 下载转录组 + GTF（EBI Ensembl release-116，已实测可达）
-
-salmon 只需要 **转录组序列（cdna）** 和 **GTF 注释**，不需要下载基因组 fasta。
-
-
-
-```
-mkdir -p ~/rnaseq/ref && cd ~/rnaseq/ref
-
-# 转录组序列（约 500 MB）
-
-wget -c https://ftp.ebi.ac.uk/ensemblorg/pub/release-116/fasta/homo_sapiens/cdna/Homo_sapiens.GRCh38.cdna.all.fa.gz
-
-# 基因注释 GTF（约 60 MB，用于提取 tx2gene 映射）
-
-wget -c https://ftp.ebi.ac.uk/ensemblorg/pub/release-116/gtf/homo_sapiens/Homo_sapiens.GRCh38.116.gtf.gz
-
-gzip -dk Homo_sapiens.GRCh38.116.gtf.gz
+```bash
+mkdir -p ref
+wget -c https://ftp.ebi.ac.uk/ensemblorg/pub/release-116/fasta/homo_sapiens/cdna/Homo_sapiens.GRCh38.cdna.all.fa.gz -P ref
+wget -c https://ftp.ebi.ac.uk/ensemblorg/pub/release-116/gtf/homo_sapiens/Homo_sapiens.GRCh38.116.gtf.gz -P ref
+gzip -dk ref/Homo_sapiens.GRCh38.116.gtf.gz
 ```
 
-> 下载太慢 / 中断：`wget -c` 断点续传；更快用 `aria2c -x 16 -s 16 -c <URL>`。
+断点续传也可以使用：
 
-
-
-***
-
-## 3. 建 salmon 索引（内存～4–8 GB，7.6 GB 内存实测可跑）
-
-
-
-```
-cd ~/rnaseq
-
-salmon index -t ref/Homo_sapiens.GRCh38.cdna.all.fa.gz -i salmon_index
+```bash
+aria2c -x 16 -s 16 -c -d ref "https://ftp.ebi.ac.uk/ensemblorg/pub/release-116/fasta/homo_sapiens/cdna/Homo_sapiens.GRCh38.cdna.all.fa.gz"
 ```
 
-> 如果内存仍然紧张，可先关闭其他程序再运行。这一步一般 5–15 分钟。
+参考文件大小：cDNA 压缩包约 **176 MB**；GTF 压缩包约 **135 MB**（解压后约 4.4 GB）。Ensembl release 和下载地址可能调整，重跑前应确认链接仍然有效。
 
+## 3. 构建 salmon 索引
 
-
-***
-
-## 4. 下载原始测序数据（airway 数据集，从 ENA 而非 NCBI！）
-
-**样本分组（4 对照 + 4 处理）：**
-
-
-
-| 分组                | 样本（SRR）                                        |
-| ----------------- | ---------------------------------------------- |
-| 对照组 untreated     | SRR1039508, SRR1039512, SRR1039516, SRR1039520 |
-| 处理组 dexamethasone | SRR1039509, SRR1039513, SRR1039517, SRR1039521 |
-
-**一次下载全部 8 个样本（4 对照 + 4 处理；DESeq2 每组最少 3 个，8 个更稳）：**
-
-
-
+```bash
+salmon index \
+  -t ref/Homo_sapiens.GRCh38.cdna.all.fa.gz \
+  -i salmon_index
 ```
-mkdir -p ~/rnaseq/fastq && cd ~/rnaseq/fastq
 
-for u in "SRR1039508 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR103/008/SRR1039508/SRR1039508" "SRR1039509 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR103/009/SRR1039509/SRR1039509" "SRR1039512 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR103/002/SRR1039512/SRR1039512" "SRR1039513 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR103/003/SRR1039513/SRR1039513" "SRR1039516 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR103/006/SRR1039516/SRR1039516" "SRR1039517 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR103/007/SRR1039517/SRR1039517" "SRR1039520 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR103/000/SRR1039520/SRR1039520" "SRR1039521 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR103/001/SRR1039521/SRR1039521" ; do
+索引构建通常需要约 4–8 GB 内存，在 7.6 GB 内存的 WSL 环境实测可运行。若进程被系统终止，先关闭其他程序或增加 WSL 可用内存。
 
-  set -- $u; s=$1; base=$2
+## 4. 下载 GSE52778 原始数据
 
+样本为 4 对匹配样本，每个细胞系各有一个 untreated 和一个 treated：
+
+| 配对 | untreated | treated |
+| --- | --- | --- |
+| 1 | SRR1039508 | SRR1039509 |
+| 2 | SRR1039512 | SRR1039513 |
+| 3 | SRR1039516 | SRR1039517 |
+| 4 | SRR1039520 | SRR1039521 |
+
+从 ENA 下载全部 paired-end FASTQ：
+
+```bash
+mkdir -p fastq
+cd fastq
+
+for u in \
+  "SRR1039508 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR103/008/SRR1039508/SRR1039508" \
+  "SRR1039509 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR103/009/SRR1039509/SRR1039509" \
+  "SRR1039512 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR103/002/SRR1039512/SRR1039512" \
+  "SRR1039513 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR103/003/SRR1039513/SRR1039513" \
+  "SRR1039516 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR103/006/SRR1039516/SRR1039516" \
+  "SRR1039517 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR103/007/SRR1039517/SRR1039517" \
+  "SRR1039520 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR103/000/SRR1039520/SRR1039520" \
+  "SRR1039521 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR103/001/SRR1039521/SRR1039521"
+do
+  set -- $u
+  sample=$1
+  base=$2
   aria2c -x 8 -s 8 -c "${base}_1.fastq.gz"
-
   aria2c -x 8 -s 8 -c "${base}_2.fastq.gz"
-
 done
-
-# 下载完成后先校验完整性（gzip 尾部块丢失会静默导致 fastqc 失败，见第 10 节排障）
 
 for f in *.fastq.gz; do
-
-  gzip -t "$f" && echo "$f OK" || echo "$f 损坏，删除后重新下载"
-
+  gzip -t "$f" && echo "$f OK" || echo "$f 损坏，请删除后重新下载"
 done
+
+cd "$PROJECT_ROOT"
 ```
 
-**换数据集时查链接（通用方法）**：
+如果链接需要重新查询：
 
-
-
-```
+```bash
 curl -s "https://www.ebi.ac.uk/ena/portal/api/filereport?accession=SRR1039508&result=read_run&fields=run_accession,fastq_ftp,fastq_bytes"
-
-# 输出里的 ftp.sra.ebi.ac.uk/... 前面加 https:// 即可下载
 ```
 
+## 5. 质控
 
-
-***
-
-## 5. 质控（fastqc + multiqc）
-
-
-
-```
-cd ~/rnaseq
-
-mkdir -p qc        # fastqc 不会自动创建输出目录，必须先建
-
+```bash
+mkdir -p qc
 fastqc -t 8 fastq/*.fastq.gz -o qc/
-
 multiqc qc/ -o qc/
-
-# 打开 qc/multiqc_report.html 查看质量汇总
 ```
 
-> 质量好可不修剪；需要时：`fastp -i in_1.fq.gz -I in_2.fq.gz -o out_1.fq.gz -O out_2.fq.gz`
+打开 `qc/multiqc_report.html` 查看每个样本的质量指标。本项目的已记录流程未执行修剪；如数据质量需要处理，可使用 fastp，但应重新执行后续定量步骤。
 
+## 6. salmon 定量
 
+```bash
+mkdir -p quant
 
-***
-
-## 6. salmon 定量（转录本拟比对，替代 STAR 比对）
-
-
-
-```
-cd ~/rnaseq
-
-for s in SRR1039508 SRR1039509 SRR1039512 SRR1039513 SRR1039516 SRR1039517 SRR1039520 SRR1039521; do
-
-salmon quant -i salmon_index -l A -1 fastq/${s}_1.fastq.gz -2 fastq/${s}_2.fastq.gz -p 8 -o quant/${s}
-
+for sample in \
+  SRR1039508 SRR1039509 SRR1039512 SRR1039513 \
+  SRR1039516 SRR1039517 SRR1039520 SRR1039521
+do
+  salmon quant \
+    -i salmon_index \
+    -l A \
+    -1 "fastq/${sample}_1.fastq.gz" \
+    -2 "fastq/${sample}_2.fastq.gz" \
+    -p 8 \
+    -o "quant/${sample}"
 done
-
-# 每个样本会生成 quant/SRRxxxx/quant.sf（转录本定量结果）
 ```
 
+每个样本应生成 `quant/SRRxxxx/quant.sf`。
 
+## 7. 生成 tx2gene、id2name 和样本表
 
-***
+仓库脚本从 `ref/Homo_sapiens.GRCh38.116.gtf` 读取注释，并将结果写入 `results/`：
 
-## 7. 提取 tx2gene + id2name 映射（salmon 是转录本级，汇总到基因级要用）
+- `tx2gene.tsv`：转录本到基因映射，供 tximport 汇总。
+- `id2name.tsv`：Ensembl 基因 ID 到基因名映射，供火山图标注。
 
-一次脚本生成两个映射文件：
-
-
-
-* `tx2gene.tsv`：转录本 → 基因（tximport 汇总用）
-
-* `id2name.tsv`：基因 ID → 基因名（ggplot2 火山图标注 top 基因用）
-
-
-
-```
-cd ~/rnaseq
-
-python3 - <<'EOF'
-
-import re
-
-tx2g = {}
-
-id2name = {}
-
-for line in open("ref/Homo_sapiens.GRCh38.116.gtf"):
-
-    if line.startswith("#") or len(line.split("\t")) < 9:
-        continue    # 跳过 #! 注释行（Ensembl GTF 开头有），否则第 9 列取不到会报错
-
-    attrs = line.split("\t")[8]
-
-    if "\ttranscript\t" in line:
-
-        g = re.search(r'gene_id "([^"]+)"', attrs)
-
-        t = re.search(r'transcript_id "([^"]+)"', attrs)
-
-        if g and t:
-
-            tx2g[t.group(1)] = g.group(1)
-
-    elif "\tgene\t" in line:
-
-        g = re.search(r'gene_id "([^"]+)"', attrs)
-
-        n = re.search(r'gene_name "([^"]+)"', attrs)
-
-        if g and n:
-
-            id2name[g.group(1)] = n.group(1)
-
-with open("tx2gene.tsv", "w") as f:
-
-    for t, g in tx2g.items():
-
-        f.write(f"{t}\t{g}\n")
-
-with open("id2name.tsv", "w") as f:
-
-    for gid, name in id2name.items():
-
-        f.write(f"{gid}\t{name}\n")
-
-print(f"tx2gene.tsv {len(tx2g)} 条；id2name.tsv {len(id2name)} 条")
-
+```bash
+mkdir -p results
+cat > results/coldata.txt <<'EOF'
+sample condition
+SRR1039508 untreated
+SRR1039509 treated
+SRR1039512 untreated
+SRR1039513 treated
+SRR1039516 untreated
+SRR1039517 treated
+SRR1039520 untreated
+SRR1039521 treated
 EOF
+
+python3 scripts/make_tx2gene.py
 ```
 
+本次运行得到 `tx2gene.tsv` 646,577 条、`id2name.tsv` 43,458 条。
 
+## 8. 差异表达分析
 
-***
-
-## 8. 差异表达（tximport + DESeq2，真实数据 + 注释版 R 脚本）
-
-**样本信息表 `coldata.txt`：**
-
-
-
-```
-sample	condition
-
-SRR1039508	untreated
-
-SRR1039509	treated
-
-SRR1039512	untreated
-
-SRR1039513	treated
-
-SRR1039516	untreated
-
-SRR1039517	treated
-
-SRR1039520	untreated
-
-SRR1039521	treated
+```bash
+Rscript scripts/deseq2.R
 ```
 
-**R 脚本 `deseq2.R`（每步都注释，能看懂）：**
+`deseq2.R` 执行以下步骤：
 
+1. 使用 `tximport` 按 `tx2gene.tsv` 将转录本定量汇总到基因级。
+2. 从 `coldata.txt` 读取样本分组。
+3. 使用 `DESeqDataSetFromTximport()` 和 `DESeq()` 完成差异分析。
+4. 通过 `results(..., contrast=c("condition", "treated", "untreated"))` 提取处理组相对对照组的结果。
+5. 将 `results/deseq2_results.txt`、`figures/MAplot.*` 和 `figures/volcano.*` 写入本地输出目录。
 
+当前脚本使用 `design=~condition`。该模型忽略样本之间的细胞系配对关系，因此结果是简化分析，不等同于 GSE52778 的正式配对模型。后续可将细胞系写入 `coldata.txt`，并把设计改为 `~ cell + condition`。
 
-```
-# 原理一句话：salmon 先把 reads 拟比对/定量到转录本；
+`results/` 和 `figures/` 已加入 `.gitignore`。运行这些脚本不会改变 Git 跟踪状态，也不会把结果上传到 GitHub。
 
-# tximport 按 tx2gene 把转录本汇总到基因；
+## 9. GO 和 KEGG 富集
 
-# DESeq2 用负二项分布建模，对处理组 vs 对照组做 Wald 检验 + BH 校正（padj）；
-
-# 画图统一用 ggplot2（不用 base R）。
-
-suppressMessages(library(tximport))
-
-suppressMessages(library(DESeq2))
-
-suppressMessages(library(ggplot2))
-
-# 1) 转录本 -> 基因 映射（第 7 步生成）
-
-tx2gene <- read.delim("tx2gene.tsv", header=FALSE, col.names=c("tx","gene"))
-
-# 2) 指定 8 个样本的 salmon 定量文件（顺序必须与 coldata.txt 一致）
-
-samples <- c("SRR1039508","SRR1039509","SRR1039512","SRR1039513",
-
-             "SRR1039516","SRR1039517","SRR1039520","SRR1039521")
-
-files <- file.path("quant", samples, "quant.sf")
-
-names(files) <- samples
-
-# 3) 导入并汇总到基因级
-
-#    dropInfReps=TRUE   ：跳过 salmon 推断重复信息（读它需要 jsonlite，常规分析不需要）
-
-#    ignoreTxVersion=TRUE：忽略转录本 ID 的版本后缀（salmon 的 ENST...N vs tx2gene 的 ENST...）
-
-txi <- tximport(files, type="salmon", tx2gene=tx2gene,
-
-                dropInfReps=TRUE, ignoreTxVersion=TRUE)
-
-# 4) 读入样本信息（与 samples 顺序一致）
-
-coldata <- read.table("coldata.txt", header=TRUE, row.names=1)
-
-coldata <- coldata[colnames(txi$counts), , drop=FALSE]
-
-# 5) 构建 DESeqDataSet 并跑差异分析
-
-dds <- DESeqDataSetFromTximport(txi, colData=coldata, design=~condition)
-
-dds <- DESeq(dds)
-
-# 6) 提取结果：treated vs untreated，按 padj 排序
-
-res <- results(dds, contrast=c("condition","treated","untreated"))
-
-res <- res[order(res$padj), ]
-
-# 7) 输出结果表 + 摘要（看有多少显著基因）
-
-write.table(as.data.frame(res), "deseq2_results.txt", sep="\t", quote=FALSE)
-
-summary(res)
-
-# 8) 转成数据框，并加上基因名（第 7 步生成的 id2name.tsv，用于火山图标注）
-
-res <- as.data.frame(res)
-
-nm <- read.delim("id2name.tsv", header=FALSE, col.names=c("id","name"))
-
-res$name <- nm$name[match(rownames(res), nm$id)]
-
-# 9) 分组着色：上调 = padj<0.05 且 log2FC>1；下调 = padj<0.05 且 log2FC<-1
-
-res$dir <- ifelse(!is.na(res$padj) & res$padj < 0.05 & res$log2FoldChange > 1, "up",
-
-          ifelse(!is.na(res$padj) & res$padj < 0.05 & res$log2FoldChange < -1, "down", "ns"))
-
-res$dir <- factor(res$dir, levels=c("up","down","ns"))
-
-cols <- c(up="#C0392B", down="#2471A3", ns="grey75")
-
-# 10) MA 图（ggplot2）
-
-p1 <- ggplot(res, aes(x=baseMean, y=log2FoldChange)) +
-
-  geom_point(aes(color=dir), size=0.7, alpha=0.55) +
-
-  scale_x_log10() +
-
-  scale_color_manual(values=cols, labels=c("显著上调","显著下调","不显著")) +
-
-  geom_hline(yintercept=0, linetype="dashed", color="grey40") +
-
-  coord_cartesian(ylim=c(-4, 4)) +
-
-  labs(x="mean of normalized counts (log10)", y="log2 fold change",
-
-       title="MA Plot — treated vs untreated", color=NULL) +
-
-  theme_bw(base_size=13) +
-
-  theme(legend.position="top", plot.title=element_text(face="bold"))
-
-ggsave("MAplot.pdf", p1, width=7.5, height=5.5)
-
-ggsave("MAplot.png", p1, width=7.5, height=5.5, dpi=300)
-
-# 11) 火山图（ggplot2，标注 top 10 基因）
-
-top <- head(res[order(res$padj, na.last=TRUE), ], 10)
-
-p2 <- ggplot(res, aes(x=log2FoldChange, y=-log10(padj))) +
-
-  geom_point(aes(color=dir), size=0.7, alpha=0.55) +
-
-  scale_color_manual(values=cols, labels=c("显著上调","显著下调","不显著")) +
-
-  geom_vline(xintercept=c(-1, 1), linetype="dashed", color="grey50") +
-
-  geom_hline(yintercept=-log10(0.05), linetype="dashed", color="grey50") +
-
-  ggrepel::geom_text_repel(data=top, aes(label=name), size=3.2,
-
-                           max.overlaps=20, seed=42, color="grey20") +
-
-  coord_cartesian(xlim=c(-8, 8)) +
-
-  labs(x="log2 fold change", y="-log10(adjusted p-value)",
-
-       title="Volcano Plot — treated vs untreated", color=NULL) +
-
-  theme_bw(base_size=13) +
-
-  theme(legend.position="top", plot.title=element_text(face="bold"))
-
-ggsave("volcano.pdf", p2, width=8, height=6)
-
-ggsave("volcano.png", p2, width=8, height=6, dpi=300)
-
-cat("完成！结果：deseq2_results.txt；图：MAplot.pdf/png、volcano.pdf/png\n")
+```bash
+Rscript scripts/enrichment.R
 ```
 
+脚本从 `deseq2_results.txt` 中提取 `padj < 0.05` 的基因，使用 clusterProfiler 完成 GO BP 和 KEGG ORA，并输出：
 
+- `results/GO_BP_enrichment.txt`
+- `results/KEGG_enrichment.txt`
+- `figures/GO_dotplot.pdf` / `.png`
+- `figures/KEGG_dotplot.pdf` / `.png`
 
-```
-Rscript deseq2.R
-```
+KEGG 分析依赖在线数据库和服务状态，结果可能随时间变化。如果 KEGG 暂时不可用，可以先保留 GO 结果。
 
+### 可选：安装注释包的备用方案
 
+若 conda 安装 `org.Hs.eg.db` 或 `GO.db` 长时间无响应，可从 Bioconductor 源码包安装：
 
-***
-
-## 9. GO/KEGG 富集分析（最后一步，做完即收尾）
-
-**富集分析的原理**：差异分析只回答 "哪些基因变了"，富集分析把显著基因放到 "功能 / 通路" 层面 —— 比如 "这批基因富集在免疫应答相关通路"，让结果有生物学意义。
-
-**R 脚本 `enrichment.R`（clusterProfiler，已实测可跑）：**
-
-
-
-```
-# GO/KEGG 富集分析：把显著基因放到功能/通路层面解读
-
-# 输入：第 8 步的 deseq2_results.txt；输出：富集结果表 + 气泡图
-
-suppressMessages(library(clusterProfiler))
-
-suppressMessages(library(org.Hs.eg.db))
-
-suppressMessages(library(ggplot2))   # dotplot 加标题需要
-
-res <- read.delim("deseq2_results.txt", row.names=1)
-
-# 显著基因（padj<0.05；想更严格可加 & abs(log2FoldChange)>1）
-
-sig <- rownames(res[!is.na(res$padj) & res$padj < 0.05, ])
-
-cat("显著基因数：", length(sig), "\n")
-
-# ---- GO 富集（BP：生物过程）----
-
-ego <- enrichGO(gene=sig, OrgDb=org.Hs.eg.db, keyType="ENSEMBL",
-
-                ont="BP", pAdjustMethod="BH",
-
-                pvalueCutoff=0.05, qvalueCutoff=0.05)
-
-if (nrow(as.data.frame(ego)) > 0) {
-
-  write.table(as.data.frame(ego), "GO_BP_enrichment.txt",
-
-              sep="\t", quote=FALSE, row.names=FALSE)
-
-  p1 <- dotplot(ego, showCategory=15) + ggtitle("GO BP Enrichment")
-
-  ggsave("GO_dotplot.pdf", p1, width=8, height=6)
-
-  ggsave("GO_dotplot.png", p1, width=8, height=6, dpi=300)
-
-} else { cat("GO 无显著富集项\n") }
-
-# ---- KEGG 通路富集（需联网访问 kegg.jp，网络已实测可达）----
-
-gene_entrez <- bitr(sig, fromType="ENSEMBL", toType="ENTREZID", OrgDb=org.Hs.eg.db)
-
-kegg <- enrichKEGG(gene=gene_entrez$ENTREZID, organism="hsa",
-
-                   pvalueCutoff=0.05, qvalueCutoff=0.05)
-
-if (nrow(as.data.frame(kegg)) > 0) {
-
-  write.table(as.data.frame(kegg), "KEGG_enrichment.txt",
-
-              sep="\t", quote=FALSE, row.names=FALSE)
-
-  p2 <- dotplot(kegg, showCategory=15) + ggtitle("KEGG Pathway Enrichment")
-
-  ggsave("KEGG_dotplot.pdf", p2, width=8, height=6)
-
-  ggsave("KEGG_dotplot.png", p2, width=8, height=6, dpi=300)
-
-} else { cat("KEGG 无显著富集项（网络不通可跳过，GO 已够用）\n") }
-
-cat("完成！GO/KEGG 结果表 + 气泡图已生成\n")
-```
-
-
-
-```
-Rscript enrichment.R
-```
-
-**产出**：`GO_BP_enrichment.txt`、`KEGG_enrichment.txt`（结果表）+ `GO_dotplot.pdf/png`、`KEGG_dotplot.pdf/png`（气泡图）。
-
-**实测结果（真实运行产出）：**
-
-
-
-| 项目                                                   | 结果                 |
-| ---------------------------------------------------- | ------------------ |
-| 显著基因数（padj<0.05）                                     | 2140               |
-| GO BP 显著条目                                           | 741 个              |
-| KEGG 显著通路                                            | 109 条              |
-| GO Top：cellular response to peptide hormone stimulus | padj=3.6e-08，76 基因 |
-| GO Top：regulation of actin filament-based process    | padj=3.6e-08，86 基因 |
-| GO Top：response to hypoxia（低氧应答）                     | padj=1.6e-06，68 基因 |
-| KEGG Top：Focal adhesion（黏着斑）                         | padj=1.1e-08，56 基因 |
-| KEGG Top：PI3K-Akt signaling pathway                  | padj=3.4e-06，75 基因 |
-| KEGG Top：Regulation of actin cytoskeleton            | padj=3.4e-06，54 基因 |
-
-这些条目与 "地塞米松（糖皮质激素）处理" 的已知生物学一致（激素应答、细胞骨架重塑、缺氧应答），说明分析流程可靠。
-
-> **如果 `conda install bioconductor-clusterprofiler` 安装过程长时间无响应**（实测：多次在事务执行阶段无限挂起，与网络无关）：可放弃 conda 路径，直接从 Bioconductor 官方源安装源码包（纯数据包无需编译）：
-
-```
-# 下载完整源码包（Galaxy Depot 镜像，国内可达；下载后 md5sum 核对）
-
-cd ~/rnaseq
-
+```bash
 wget -c https://depot.galaxyproject.org/software/bioconductor-org.hs.eg.db/bioconductor-org.hs.eg.db_3.22.0_src_all.tar.gz
-
 wget -c https://depot.galaxyproject.org/software/bioconductor-go.db/bioconductor-go.db_3.22.0_src_all.tar.gz
-
-# 官方 md5：org.Hs.eg.db = e80cac6ec018a95aea4f7530350e80a2，GO.db = 5ae5557afa56227c4c9c145907b1f585
-
-# 安装进当前环境（R CMD INSTALL 会自己找到 R 库；纯数据包不需要 gcc）
-
 R CMD INSTALL org.Hs.eg.db_3.22.0_src_all.tar.gz GO.db_3.22.0_src_all.tar.gz
-
-# 其余依赖（clusterProfiler/DOSE/enrichplot 等）用 conda install 正常装，
-
-# 若同样长时间无响应，可先装好除这两个数据包外的全部依赖，再按上面源码包方式补装
+Rscript -e 'library(clusterProfiler); library(org.Hs.eg.db); cat("OK\n")'
 ```
 
-> 安装后验证：`Rscript -e 'library(clusterProfiler); library(org.Hs.eg.db); cat("OK")'`。
+下载后应核对官方校验值再安装。
 
+## 10. 可选：单独重画 MA 图和火山图
 
+若只需要调整图形样式，不必重新运行差异分析：
 
-***
+```bash
+Rscript scripts/plot_ggplot2.R
+```
 
-## 10. 跑通后的自检
+该脚本读取 `results/deseq2_results.txt` 和 `results/id2name.tsv`，重新生成 `figures/MAplot.*` 和 `figures/volcano.*`。
 
-**自检清单：**
+## 11. 自检
 
+- `qc/multiqc_report.html` 可以正常打开，样本质量指标合理。
+- `quant/SRRxxxx/quant.sf` 对 8 个样本均存在。
+- `results/tx2gene.tsv` 和 `results/id2name.tsv` 非空。
+- `results/deseq2_results.txt` 包含 34,712 个基因的差异分析结果。
+- 按 `padj < 0.05` 统计得到 2,140 个显著基因，其中上调 1,208 个、下调 932 个。
+- 同时要求 `|log2FC| > 1` 时，得到上调 383 个、下调 325 个。
+- 当前结果中 ZBTB16 的 `log2FC = +5.61`、`padj = 3.56e-41`；按 `padj` 排序靠前的基因包括 SPARCL1、PER1 和 ARHGEF2。
+- GO BP 和 KEGG 结果表及气泡图正常生成。本机运行快照为 GO 741 条、KEGG 109 条，重新运行可能变化。
 
+可使用以下命令检查样本表、映射表、结果规模和主要统计量：
 
-* [ ] `multiqc_report.html` 打开正常，各样本质量达标
+```bash
+test -s results/coldata.txt
+test -s results/tx2gene.tsv
+test -s results/id2name.tsv
+wc -l results/tx2gene.tsv results/id2name.tsv results/deseq2_results.txt
+Rscript -e 'res <- read.delim("results/deseq2_results.txt", row.names = 1); sig <- !is.na(res$padj) & res$padj < 0.05; cat("genes:", nrow(res), "significant:", sum(sig), "up:", sum(sig & res$log2FoldChange > 0), "down:", sum(sig & res$log2FoldChange < 0), "\n")'
+```
 
-* [ ] 每个样本都有 `quant/SRRxxxx/quant.sf`
+注意：当前 `deseq2_results.txt` 第一列是基因 ID，但表头没有单独的 `gene_id` 列。项目内 R 脚本按行名读取；使用 pandas 等其他工具时需要通过 `index_col=0` 或等价方式处理。后续可考虑在脚本中显式输出 `gene_id` 列。
 
-* [ ] `tx2gene.tsv` 与 `id2name.tsv` 均已生成且非空（行数 = 转录本数 / 基因数）
+## 12. 常见问题
 
-* [ ] `deseq2_results.txt` 有几千行、`padj` 有值
+| 症状 | 可能原因 | 处理方式 |
+| --- | --- | --- |
+| 下载中断 | 网络波动 | 使用 `wget -c` 或 `aria2c -c` 断点续传 |
+| FastQC 报错或 MultiQC 样本缺失 | FASTQ gzip 文件不完整 | 使用 `gzip -t` 检查并重新下载 |
+| NCBI 或 UCSC 访问不稳定 | 网络路径问题 | 使用 ENA、Ensembl 或本地镜像 |
+| conda 安装缓慢 | `conda-forge` 或 `bioconda` 网络较慢 | 可选配置清华镜像，或分步安装依赖 |
+| salmon index 被终止 | 内存不足 | 关闭其他程序或增加 WSL 内存 |
+| tximport 缺少 jsonlite | 读取 salmon 推断重复信息 | 当前脚本已设置 `dropInfReps=TRUE` |
+| tximport 找不到转录本 | 转录本版本后缀不一致 | 当前脚本已设置 `ignoreTxVersion=TRUE` |
+| DESeq2 列不匹配 | 定量文件和分组表顺序不一致 | 检查 `coldata.txt` 与 `quant/` 中的样本名 |
+| KEGG 为空或报错 | 在线服务不可达 | 保留 GO 结果，网络恢复后重跑 KEGG |
+| 脚本找不到参考或定量文件 | `ref/` 或 `quant/` 不完整 | 检查参考文件、salmon 索引和每个样本的 `quant.sf` |
 
-* [ ] `MAplot.pdf/png`、`volcano.pdf/png` 有红 / 蓝显著点，火山图标注了 top 基因名（如 ZBTB16）
+## 13. 数据来源
 
-* [ ] `GO_BP_enrichment.txt` 741 行条目、`KEGG_enrichment.txt` 109 行条目，两张气泡图正常（实测：GO Top 为激素应答 /actin 骨架，KEGG Top 为黏着斑 / PI3K-Akt，符合地塞米松数据生物学）
-
-
-
-
-
-***
-
-## 11. 常见排障速查
-
-
-
-| 症状                                                          | 原因                                  | 解法                                                                                            |
-| ----------------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------- |
-| 下载中断                                                        | 网络波动                                | `wget -c` / `aria2c -c` 断点续传，重跑同一命令                                                           |
-| fastqc 报错 /multiqc 少数据                                      | fastq.gz 下载不完整（尾部 gzip 块丢失）         | `gzip -t <文件>` 检查，删除后重新下载                                                                     |
-| NCBI/UCSC 打不开                                               | 网络到美国源不通                          | 改用 EBI ENA / EBI Ensembl / NGDC / CNGB                                                       |
-| conda 装包慢                                                   | 未配置镜像                               | 用第 1 节清华镜像 `.condarc`                                                                         |
-| salmon index 被杀（Killed）                                     | 内存不足                                | 关闭其他程序，或为 WSL 分配更多内存                                                            |
-| tximport 报 "requires package jsonlite"                      | 读取 salmon 推断重复需要 jsonlite           | `tximport(..., dropInfReps=TRUE)` 跳过                                                          |
-| tximport 报 "None of the transcripts ... present in tx2gene" | 转录本 ID 版本后缀不一致（ENST...N vs ENST...） | `tximport(..., ignoreTxVersion=TRUE)`                                                         |
-| tximport 报错 / 基因数不对                                         | tx2gene.tsv 有问题                     | 重跑第 7 步 Python 脚本，确认有输出行数                                                                     |
-| DESeq2 报错列不匹配                                               | counts 与 coldata 顺序不一致              | 检查 `samples` 与 `coldata.txt` 行顺序完全一致                                                          |
-| R 报缺 ggplot2/ggrepel                                        | 未安装                                 | `conda install -y r-ggplot2 r-ggrepel`                                                        |
-| R 报缺 clusterProfiler/org.Hs.eg.db                           | 未安装                                 | `conda install -y bioconductor-clusterprofiler bioconductor-org.hs.eg.db`；若安装过程长时间无响应，按第 9 节源码包方式补装 |
-| enrichKEGG 报错或空白                                            | kegg.jp 连不上                         | 网络可达时用 KEGG；不通就跳过 KEGG，GO 结果已够用                                                               |
+- GEO：[GSE52778 airway](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE52778)
+- 原始测序数据：EBI ENA，accessions 见第 4 节
+- 关联论文：Himes et al. (2014)，[DOI: 10.1371/journal.pone.0099625](https://doi.org/10.1371/journal.pone.0099625)
+- 参考转录组和注释：[Ensembl GRCh38 release-116](https://ftp.ensembl.org/pub/release-116/)
+- 下载链接和在线数据库状态会变化；本指南记录的是 2026-09 验证时的可用路径。
