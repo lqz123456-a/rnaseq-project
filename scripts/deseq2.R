@@ -75,7 +75,7 @@ cols <- c(up = "#C0392B", down = "#2471A3", ns = "grey75")
 p1 <- ggplot(res, aes(x = baseMean, y = log2FoldChange)) +
   geom_point(aes(color = dir), size = 0.7, alpha = 0.55) +
   scale_x_log10() +
-  scale_color_manual(values = cols, labels = c("显著上调", "显著下调", "不显著")) +
+  scale_color_manual(values = cols, labels = c("Up", "Down", "Not significant")) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
   coord_cartesian(ylim = c(-4, 4)) +
   labs(x = "mean of normalized counts (log10)",
@@ -93,7 +93,7 @@ top <- head(res[order(res$padj, na.last = TRUE), ], 10)
 
 p2 <- ggplot(res, aes(x = log2FoldChange, y = -log10(padj))) +
   geom_point(aes(color = dir), size = 0.7, alpha = 0.55) +
-  scale_color_manual(values = cols, labels = c("显著上调", "显著下调", "不显著")) +
+  scale_color_manual(values = cols, labels = c("Up", "Down", "Not significant")) +
   geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "grey50") +
   geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "grey50") +
   ggrepel::geom_text_repel(data = top, aes(label = name), size = 3.2,
