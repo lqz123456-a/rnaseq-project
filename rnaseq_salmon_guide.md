@@ -1,6 +1,6 @@
 # RNA-seq 完整复现指南（salmon + DESeq2）
 
-本指南用于复现 GSE52778「airway」数据集的处理流程：从 ENA 下载 paired-end 50bp FASTQ，使用 FastQC/MultiQC 质控、salmon 定量、tximport 汇总和 DESeq2 差异分析，最后完成 ggplot2 可视化与 GO/KEGG 富集。
+本指南用于复现 GSE52778「airway」数据集的处理流程：从 ENA 下载 paired-end 63 bp FASTQ，使用 FastQC/MultiQC 质控、salmon 定量、tximport 汇总和 DESeq2 差异分析，最后完成 ggplot2 可视化与 GO/KEGG 富集。
 
 > 数据集包含 8 个气道平滑肌细胞样本，即 4 对细胞系的处理与对照。`deseq2.R` 使用 `design=~cell + condition` 配对模型：先扣除 4 个细胞系（N61311、N052611、N080611、N061011）的基线表达差异，再估计地塞米松处理效应。
 >

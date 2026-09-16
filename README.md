@@ -8,7 +8,7 @@
 
 | 环节 | 工具 | 说明 |
 | --- | --- | --- |
-| 数据下载 | wget / ENA（EBI） | 8 个 paired-end 50bp FASTQ 样本 |
+| 数据下载 | wget / ENA（EBI） | 8 个 paired-end 63 bp FASTQ 样本 |
 | 质控 | FastQC + MultiQC | 下载完整性检查与质量汇总；本流程未执行修剪 |
 | 定量 | salmon | 转录本拟比对和定量 |
 | 参考注释 | Ensembl GRCh38 release-116 | cDNA 序列与 GTF 注释 |
