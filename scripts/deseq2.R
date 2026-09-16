@@ -46,7 +46,8 @@ coldata <- read.table(file.path(RESULTS_DIR, "coldata.txt"),
 coldata <- coldata[colnames(txi$counts), , drop = FALSE]
 
 # 5) 构建 DESeqDataSet 并跑完整差异分析
-dds <- DESeqDataSetFromTximport(txi, colData = coldata, design = ~condition)
+#    design = ~cell + condition：配对模型，扣除 4 个细胞系的基线差异后再估计处理效应
+dds <- DESeqDataSetFromTximport(txi, colData = coldata, design = ~cell + condition)
 dds <- DESeq(dds)
 
 # 6) 提取结果：treated vs untreated，按 padj 排序

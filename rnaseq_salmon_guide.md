@@ -2,7 +2,7 @@
 
 本指南用于复现 GSE52778「airway」数据集的处理流程：从 ENA 下载 paired-end 50bp FASTQ，使用 FastQC/MultiQC 质控、salmon 定量、tximport 汇总和 DESeq2 差异分析，最后完成 ggplot2 可视化与 GO/KEGG 富集。
 
-> 数据集包含 8 个气道平滑肌细胞样本，即 4 对细胞系的处理与对照。当前 `deseq2.R` 使用 `design=~condition` 的简化非配对模型；更严格的复现可加入细胞系协变量，使用 `~ cell + condition`。
+> 数据集包含 8 个气道平滑肌细胞样本，即 4 对细胞系的处理与对照。`deseq2.R` 使用 `design=~cell + condition` 配对模型：先扣除 4 个细胞系（N61311、N052611、N080611、N061011）的基线表达差异，再估计地塞米松处理效应。
 >
 > 本指南在 conda 命令中显式使用 `conda-forge` 和 `bioconda`。国内网络下载缓慢时可额外配置清华镜像，但安装命令的渠道声明保持不变。
 
@@ -217,15 +217,15 @@ done
 ```bash
 mkdir -p results
 cat > results/coldata.txt <<'EOF'
-sample condition
-SRR1039508 untreated
-SRR1039509 treated
-SRR1039512 untreated
-SRR1039513 treated
-SRR1039516 untreated
-SRR1039517 treated
-SRR1039520 untreated
-SRR1039521 treated
+sample condition cell
+SRR1039508 untreated N61311
+SRR1039509 treated N61311
+SRR1039512 untreated N052611
+SRR1039513 treated N052611
+SRR1039516 untreated N080611
+SRR1039517 treated N080611
+SRR1039520 untreated N061011
+SRR1039521 treated N061011
 EOF
 
 python3 scripts/make_tx2gene.py
@@ -242,12 +242,12 @@ Rscript scripts/deseq2.R
 `deseq2.R` 执行以下步骤：
 
 1. 使用 `tximport` 按 `tx2gene.tsv` 将转录本定量汇总到基因级。
-2. 从 `coldata.txt` 读取样本分组。
+2. 从 `results/coldata.txt` 读取样本分组（含细胞系与处理信息）。
 3. 使用 `DESeqDataSetFromTximport()` 和 `DESeq()` 完成差异分析。
 4. 通过 `results(..., contrast=c("condition", "treated", "untreated"))` 提取处理组相对对照组的结果。
 5. 将 `results/deseq2_results.txt`、`figures/MAplot.*` 和 `figures/volcano.*` 写入本地输出目录。
 
-当前脚本使用 `design=~condition`。该模型忽略样本之间的细胞系配对关系，因此结果是简化分析，不等同于 GSE52778 的正式配对模型。后续可将细胞系写入 `coldata.txt`，并把设计改为 `~ cell + condition`。
+当前脚本使用 `design=~cell + condition` 配对模型。GSE52778 的 4 个细胞系各含一对处理/对照样本，模型中先扣除细胞系基线表达差异，再估计处理效应，符合配对实验设计。
 
 `results/` 和 `figures/` 已加入 `.gitignore`。运行这些脚本不会改变 Git 跟踪状态，也不会把结果上传到 GitHub。
 
@@ -295,10 +295,10 @@ Rscript scripts/plot_ggplot2.R
 - `quant/SRRxxxx/quant.sf` 对 8 个样本均存在。
 - `results/tx2gene.tsv` 和 `results/id2name.tsv` 非空。
 - `results/deseq2_results.txt` 包含 34,712 个基因的差异分析结果。
-- 按 `padj < 0.05` 统计得到 2,140 个显著基因，其中上调 1,208 个、下调 932 个。
-- 同时要求 `|log2FC| > 1` 时，得到上调 383 个、下调 325 个。
-- 当前结果中 ZBTB16 的 `log2FC = +5.61`、`padj = 3.56e-41`；按 `padj` 排序靠前的基因包括 SPARCL1、PER1 和 ARHGEF2。
-- GO BP 和 KEGG 结果表及气泡图正常生成。本机运行快照为 GO 741 条、KEGG 109 条，重新运行可能变化。
+- 按 `padj < 0.05` 统计得到 3,387 个显著基因，其中上调 1,843 个、下调 1,544 个。
+- 同时要求 `|log2FC| > 1` 时，得到上调 441 个、下调 403 个。
+- 当前结果中 ZBTB16 的 `log2FC = +5.68`、`padj = 3.79e-130`，按 `padj` 排序为第 1；靠前基因还包括 DUSP1、NEXN 和 SAMHD1。
+- GO BP 和 KEGG 结果表及气泡图正常生成。本机运行快照为 GO 1,350 条、KEGG 141 条，重新运行可能变化。
 
 可使用以下命令检查样本表、映射表、结果规模和主要统计量：
 

@@ -53,11 +53,11 @@ rnaseq-project/
 以下数字来自本项目的一次本机运行快照，用于说明预期输出；对应结果文件和图片不随仓库分发。
 
 - 差异分析覆盖 **34,712 个基因**。
-- 按 `padj < 0.05` 判定，共有 **2,140 个显著基因**，其中上调 **1,208 个**、下调 **932 个**。
-- 若在 `padj < 0.05` 的基础上再要求 `|log2FC| > 1`，则得到上调 **383 个**、下调 **325 个**。
-- 按 `padj` 排序，靠前的基因包括 **SPARCL1**、**PER1** 和 **ARHGEF2**。
-- **ZBTB16** 是代表性显著上调基因：`log2FC = +5.61`，`padj = 3.56e-41`。
-- 本次 GO BP 结果包含 **741 个显著条目**，KEGG 结果包含 **109 条显著通路**。在线数据库更新或重新运行可能产生变化。
+- 按 `padj < 0.05` 判定，共有 **3,387 个显著基因**，其中上调 **1,843 个**、下调 **1,544 个**。
+- 若在 `padj < 0.05` 的基础上再要求 `|log2FC| > 1`，则得到上调 **441 个**、下调 **403 个**。
+- 按 `padj` 排序，靠前的基因包括 **ZBTB16**、**DUSP1** 和 **NEXN**。
+- **ZBTB16** 是最显著的上调基因：`log2FC = +5.68`，`padj = 3.79e-130`。
+- 本次 GO BP 结果包含 **1,350 个显著条目**，KEGG 结果包含 **141 条显著通路**。在线数据库更新或重新运行可能产生变化。
 
 ## 结果输出
 
@@ -77,9 +77,9 @@ rnaseq-project/
 
 ## 结果解释
 
-`padj` 是经过 Benjamini-Hochberg 多重检验校正后的显著性指标，不包含效应量阈值。`log2FC` 表示处理组相对于对照组的表达变化幅度，正值为上调、负值为下调。因此，2,140 个显著基因与 708 个同时满足 `|log2FC| > 1` 的基因属于两个不同的筛选层级，应分别说明。
+`padj` 是经过 Benjamini-Hochberg 多重检验校正后的显著性指标，不包含效应量阈值。`log2FC` 表示处理组相对于对照组的表达变化幅度，正值为上调、负值为下调。因此，3,387 个显著基因与 844 个同时满足 `|log2FC| > 1` 的基因属于两个不同的筛选层级，应分别说明。
 
-当前 `deseq2.R` 使用 `design=~condition` 进行简化分析，没有把细胞系作为配对因素加入模型。GSE52778 的 4 个细胞系均包含配对的处理与对照样本，因此在更严格的复现中可改为 `~ cell + condition`。本轮文档保留现有分析结果，并将配对建模列为后续改进项。
+当前 `deseq2.R` 使用 `design=~cell + condition` 配对模型：GSE52778 的 4 个细胞系（N61311、N052611、N080611、N061011）各含一对处理/对照样本，模型中先扣除细胞系基线表达差异，再估计地塞米松处理效应，符合该数据集的配对实验设计。
 
 ## 快速开始
 
@@ -89,15 +89,15 @@ rnaseq-project/
 # 已准备好 ref/ 和 quant/ 后执行
 mkdir -p results
 cat > results/coldata.txt <<'EOF'
-sample condition
-SRR1039508 untreated
-SRR1039509 treated
-SRR1039512 untreated
-SRR1039513 treated
-SRR1039516 untreated
-SRR1039517 treated
-SRR1039520 untreated
-SRR1039521 treated
+sample condition cell
+SRR1039508 untreated N61311
+SRR1039509 treated N61311
+SRR1039512 untreated N052611
+SRR1039513 treated N052611
+SRR1039516 untreated N080611
+SRR1039517 treated N080611
+SRR1039520 untreated N061011
+SRR1039521 treated N061011
 EOF
 
 python3 scripts/make_tx2gene.py
@@ -133,7 +133,7 @@ Rscript scripts/plot_ggplot2.R
 ## 数据与分析边界
 
 - GSE52778 是公开的真实数据，本项目用于展示和复现标准 RNA-seq 分析流程。
-- 当前结果基于简化非配对模型，不能替代加入细胞系协变量后的正式差异分析。
+- 当前结果使用 `~cell + condition` 配对模型；每个细胞系仅有一对处理/对照样本，残余自由度为 3，结果解释仍应保持谨慎。
 - 下载链接、KEGG 在线数据库和注释版本可能随时间变化。
 - FASTQ、参考文件、salmon 索引、`quant/`、`results/` 和 `figures/` 不随仓库分发，完整复现需要重新下载和计算。
 - `docs/images/` 仅保留 README 展示所需的四张 PNG；PDF 和完整结果目录仍不纳入版本控制。

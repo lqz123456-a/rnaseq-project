@@ -42,19 +42,31 @@ if (nrow(as.data.frame(ego)) > 0) {
   cat("GO 无显著富集项\n")
 }
 
-# ---- KEGG 通路富集（需联网访问 kegg.jp）----
-gene_entrez <- bitr(sig, fromType = "ENSEMBL", toType = "ENTREZID", OrgDb = org.Hs.eg.db)
-kegg <- enrichKEGG(gene = gene_entrez$ENTREZID, organism = "hsa",
-                   pvalueCutoff = 0.05, qvalueCutoff = 0.05)
+# ---- KEGG 通路富集（需联网访问 kegg.jp，网络不通时跳过，不中断脚本）----
+kegg_table_path <- file.path(RESULTS_DIR, "KEGG_enrichment.txt")
+kegg_pdf_path <- file.path(FIGURES_DIR, "KEGG_dotplot.pdf")
+kegg_png_path <- file.path(FIGURES_DIR, "KEGG_dotplot.png")
+unlink(c(kegg_table_path, kegg_pdf_path, kegg_png_path))
 
-if (nrow(as.data.frame(kegg)) > 0) {
-  write.table(as.data.frame(kegg), file.path(RESULTS_DIR, "KEGG_enrichment.txt"),
+gene_entrez <- bitr(sig, fromType = "ENSEMBL", toType = "ENTREZID", OrgDb = org.Hs.eg.db)
+kegg <- tryCatch(
+  enrichKEGG(gene = gene_entrez$ENTREZID, organism = "hsa",
+             pvalueCutoff = 0.05, qvalueCutoff = 0.05),
+  error = function(e) {
+    cat("KEGG 连接失败，已跳过：", conditionMessage(e), "\n")
+    NULL
+  }
+)
+
+if (!is.null(kegg) && nrow(as.data.frame(kegg)) > 0) {
+  write.table(as.data.frame(kegg), kegg_table_path,
               sep = "\t", quote = FALSE, row.names = FALSE)
   p2 <- dotplot(kegg, showCategory = 15) + ggtitle("KEGG Pathway Enrichment")
-  ggsave(file.path(FIGURES_DIR, "KEGG_dotplot.pdf"), p2, width = 8, height = 6)
-  ggsave(file.path(FIGURES_DIR, "KEGG_dotplot.png"), p2, width = 8, height = 6, dpi = 300)
+  ggsave(kegg_pdf_path, p2, width = 8, height = 6)
+  ggsave(kegg_png_path, p2, width = 8, height = 6, dpi = 300)
+  cat("完成：results/KEGG_enrichment.txt；figures/KEGG_dotplot.*\n")
 } else {
-  cat("KEGG 无显著富集项（网络不通时可跳过，GO 已独立保存）\n")
+  cat("KEGG 无显著富集项或服务不可达（GO 已独立保存，网络恢复后可重跑）\n")
 }
 
-cat("完成：results/GO_BP_enrichment.txt、results/KEGG_enrichment.txt；figures/*dotplot.*\n")
+cat("完成：results/GO_BP_enrichment.txt；figures/GO_dotplot.*\n")
