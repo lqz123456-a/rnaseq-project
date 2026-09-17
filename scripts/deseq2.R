@@ -80,10 +80,13 @@ p1 <- ggplot(res, aes(x = baseMean, y = log2FoldChange)) +
   coord_cartesian(ylim = c(-4, 4)) +
   labs(x = "mean of normalized counts (log10)",
        y = "log2 fold change",
-       title = "MA Plot - treated vs untreated",
+       title = "MA Plot - Dexamethasone vs Control (airway)",
+       subtitle = "red: padj<0.05 & log2FC>1; blue: padj<0.05 & log2FC<-1",
        color = NULL) +
   theme_bw(base_size = 13) +
-  theme(legend.position = "top", plot.title = element_text(face = "bold"))
+  theme(legend.position = "top",
+        plot.title = element_text(face = "bold"),
+        panel.grid.minor = element_blank())
 
 ggsave(file.path(FIGURES_DIR, "MAplot.pdf"), p1, width = 7.5, height = 5.5)
 ggsave(file.path(FIGURES_DIR, "MAplot.png"), p1, width = 7.5, height = 5.5, dpi = 300)
@@ -100,10 +103,13 @@ p2 <- ggplot(res, aes(x = log2FoldChange, y = -log10(padj))) +
                            max.overlaps = 20, seed = 42, color = "grey20") +
   coord_cartesian(xlim = c(-8, 8)) +
   labs(x = "log2 fold change", y = "-log10(adjusted p-value)",
-       title = "Volcano Plot - treated vs untreated",
+       title = "Volcano Plot - Dexamethasone vs Control (airway)",
+       subtitle = "dashed: |log2FC|=1, padj=0.05",
        color = NULL) +
   theme_bw(base_size = 13) +
-  theme(legend.position = "top", plot.title = element_text(face = "bold"))
+  theme(legend.position = "top",
+        plot.title = element_text(face = "bold"),
+        panel.grid.minor = element_blank())
 
 ggsave(file.path(FIGURES_DIR, "volcano.pdf"), p2, width = 8, height = 6)
 ggsave(file.path(FIGURES_DIR, "volcano.png"), p2, width = 8, height = 6, dpi = 300)
