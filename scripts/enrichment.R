@@ -23,8 +23,9 @@ dir.create(FIGURES_DIR, recursive = TRUE, showWarnings = FALSE)
 
 res <- read.delim(file.path(RESULTS_DIR, "deseq2_results.txt"), row.names = 1)
 
-# 显著基因（padj<0.05；想更严格可加 & abs(log2FoldChange)>1）
-sig <- rownames(res[!is.na(res$padj) & res$padj < 0.05, ])
+# 显著基因：padj < 0.05 且 |log2FC| > 1
+sig <- rownames(res[!is.na(res$padj) & !is.na(res$log2FoldChange) &
+                    res$padj < 0.05 & abs(res$log2FoldChange) > 1, ])
 cat("显著基因数：", length(sig), "\n")
 
 # ---- GO 富集（BP：生物过程）----

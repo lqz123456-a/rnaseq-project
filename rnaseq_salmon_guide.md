@@ -257,7 +257,7 @@ Rscript scripts/deseq2.R
 Rscript scripts/enrichment.R
 ```
 
-脚本从 `deseq2_results.txt` 中提取 `padj < 0.05` 的基因，使用 clusterProfiler 完成 GO BP 和 KEGG ORA，并输出：
+脚本从 `deseq2_results.txt` 中提取同时满足 `padj < 0.05` 和 `|log2FC| > 1` 的基因，使用 clusterProfiler 完成 GO BP 和 KEGG ORA，并输出：
 
 - `results/GO_BP_enrichment.txt`
 - `results/KEGG_enrichment.txt`
@@ -297,8 +297,9 @@ Rscript scripts/plot_ggplot2.R
 - `results/deseq2_results.txt` 包含 34,712 个基因的差异分析结果。
 - 按 `padj < 0.05` 统计得到 3,387 个显著基因，其中上调 1,843 个、下调 1,544 个。
 - 同时要求 `|log2FC| > 1` 时，得到上调 441 个、下调 403 个。
+- GO/KEGG 富集分析使用同时满足 `padj < 0.05` 和 `|log2FC| > 1` 的 844 个基因。
 - 当前结果中 ZBTB16 的 `log2FC = +5.68`、`padj = 3.79e-130`，按 `padj` 排序为第 1；靠前基因还包括 DUSP1、NEXN 和 SAMHD1。
-- GO BP 和 KEGG 结果表及气泡图正常生成。本机运行快照为 GO 1,350 条、KEGG 141 条，重新运行可能变化。
+- GO BP 和 KEGG 结果表及气泡图正常生成。本机运行快照为 GO 611 条、KEGG 29 条，重新运行可能变化。
 
 可使用以下命令检查样本表、映射表、结果规模和主要统计量：
 
@@ -307,7 +308,7 @@ test -s results/coldata.txt
 test -s results/tx2gene.tsv
 test -s results/id2name.tsv
 wc -l results/tx2gene.tsv results/id2name.tsv results/deseq2_results.txt
-Rscript -e 'res <- read.delim("results/deseq2_results.txt", row.names = 1); sig <- !is.na(res$padj) & res$padj < 0.05; cat("genes:", nrow(res), "significant:", sum(sig), "up:", sum(sig & res$log2FoldChange > 0), "down:", sum(sig & res$log2FoldChange < 0), "\n")'
+Rscript -e 'res <- read.delim("results/deseq2_results.txt", row.names = 1); sig <- !is.na(res$padj) & res$padj < 0.05; effect <- sig & abs(res$log2FoldChange) > 1; cat("genes:", nrow(res), "significant:", sum(sig), "effect:", sum(effect), "up:", sum(sig & res$log2FoldChange > 0), "down:", sum(sig & res$log2FoldChange < 0), "\n")'
 ```
 
 注意：当前 `deseq2_results.txt` 第一列是基因 ID，但表头没有单独的 `gene_id` 列。项目内 R 脚本按行名读取；使用 pandas 等其他工具时需要通过 `index_col=0` 或等价方式处理。后续可考虑在脚本中显式输出 `gene_id` 列。
